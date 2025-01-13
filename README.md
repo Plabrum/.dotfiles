@@ -2,9 +2,11 @@
 
 Mac Os Dotfiles
 
-## Installer
+## Install Configuration
 
-`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/plabrum/install.sh)"`
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/plabrum/install.sh)"
+```
 
 Inspo:
 
