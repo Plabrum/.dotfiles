@@ -5,7 +5,7 @@ Mac Os Dotfiles
 ## Install Configuration
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/plabrum/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Plabrum/.dotfiles/refs/heads/main/install.sh)"
 ```
 
 Inspo:
