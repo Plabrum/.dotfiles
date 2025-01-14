@@ -26,14 +26,14 @@ install_oh_my_zsh() {
 
 configure_iterm2() {
 	if [ -d "/Applications/iTerm.app" ]; then
+  info "Configuring iTerm2..."
   # Specify the preferences directory
   defaults write com.googlecode.iterm2.plist PrefsCustomFolder -string "$(pwd)/configs/iterm2"
-
   # Tell iTerm2 to use the custom preferences in the directory
   defaults write com.googlecode.iterm2.plist LoadPrefsFromCustomFolder -bool true
-
   # Tell iTerm2 to save preferences automatically
   defaults write com.googlecode.iterm2.plist "NoSyncNeverRemindPrefsChangesLostForFile_selection" -int 2
+  success "iTerm2 configured successfully"
 fi
 }
 

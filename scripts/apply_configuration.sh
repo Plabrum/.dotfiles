@@ -5,6 +5,11 @@ set -o nounset
 set -o pipefail
 
 . scripts/utils.sh
+. scripts/terminal.sh
+
+
+configure_iterm2
+exit 0 
 
 config_file="config.ini"
 
@@ -44,3 +49,11 @@ parse_ini_file() {
 parse_ini_file $config_file config
 
 print_sections config
+
+
+
+# Main script execution
+install_miniconda
+install_conda_packages
+
+echo "Miniconda and packages installed successfully."

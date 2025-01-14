@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 reset_color=$(tput sgr 0)
 

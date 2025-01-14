@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -o errexit
 
+
 REPO_URL=https://github.com/plabrum/.dotfiles.git
 REPO_PATH="$HOME/.dotfiles"
 
@@ -23,10 +24,3 @@ cd "$REPO_PATH"
 
 echo "Starting installation"
 bash apply_configuration.sh
-
-
-# Main script execution
-install_miniconda
-install_conda_packages
-
-echo "Miniconda and packages installed successfully."
