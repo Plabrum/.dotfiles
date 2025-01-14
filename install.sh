@@ -22,4 +22,4 @@ echo "Change path to $REPO_PATH"
 cd "$REPO_PATH"
 
 echo "Starting installation"
-bash apply_configuration.sh
+bash scripts/apply_configuration.sh

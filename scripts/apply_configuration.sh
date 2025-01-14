@@ -8,6 +8,8 @@ set -o pipefail
 . scripts/terminal.sh
 . packages.sh
 
+echo loaded
+exit 0 
 
 run_installer "Brew Apps" install_brew_casks brew_apps
 run_installer "Brew Packages" install_brew_packages brew_packages
