@@ -6,11 +6,9 @@ set -o pipefail
 
 . scripts/utils.sh
 . scripts/terminal.sh
-. packages.sh
+. scripts/packages.sh
 
-echo loaded
-exit 0 
-
+echo "Starting installation"
 run_installer "Brew Apps" install_brew_casks brew_apps
 run_installer "Brew Packages" install_brew_packages brew_packages
 run_installer "Mac App Store Apps" install_masApps mas_apps
