@@ -1,0 +1,16 @@
+# Misc
+alias va="vim ~/.aliases"
+alias publicIP="dig +short myip.opendns.com @resolver1.opendns.com"
+alias startDev="watchexec -c -r npm start"
+
+# Applications
+alias code="open -a Visual\ Studio\ Code.app"
+alias excel="open -a Microsoft\ Excel.app"
+alias typora="open -a Typora.app"
+
+# Git
+alias lg="lazygit"
+alias gcd="git checkout @{-1}"
+alias gbl="git for-each-ref --count=15 --sort=-committerdate refs/heads/ --format='%(refname:short)'"
+alias gpr="git stash && gcm && git pull && gcd && git rebase main && git stash pop"
+alias gfp="git push --force"

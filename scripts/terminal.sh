@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 
 install_homebrew() {
@@ -63,5 +63,12 @@ install_masApps() {
 	info "Installing App Store apps..."
 	for app in "${mas_apps[@]}"; do
 		mas install "$app"
+	done
+}
+
+install_vs_code_extensions() {
+	info "Installing Visual Studio Code extensions..."
+	for extension in "${vs_code_extensions[@]}"; do
+		code --install-extension "$extension"
 	done
 }

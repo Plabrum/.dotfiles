@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 setup_osx() {
 	info "Configuring MacOS default settings"

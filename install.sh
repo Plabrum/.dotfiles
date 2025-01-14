@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 set -o errexit
 
 REPO_URL=https://github.com/plabrum/.dotfiles.git
@@ -19,7 +19,14 @@ git clone "$REPO_URL" "$REPO_PATH"
 
 # Navigate to the dotfiles directory
 echo "Change path to $REPO_PATH"
-cd "$REPO_PATH" >/dev/null
+cd "$REPO_PATH"
 
 echo "Starting installation"
-./install.sh
+bash apply_configuration.sh
+
+
+# Main script execution
+install_miniconda
+install_conda_packages
+
+echo "Miniconda and packages installed successfully."

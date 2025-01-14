@@ -19,31 +19,31 @@ warn() {
 }
 
 print_section_header() {
-  info "################################################################################"
-  info "$1"
-  info "################################################################################"
+	info "################################################################################"
+	info "$1"
+	info "################################################################################"
 }
 
 wait_input() {
-	read -p -r "Press enter to continue: "
+	read -r "REPLY?Press enter to continue: "
 }
 
 # General installation function
 run_installer() {
-    local name="Installing $1..."
-    local installing_function="$2"
-    local args="$3"
-    
-    wait_input
-    print_section_header "$name"
-    # Call the passed function by its name with arguments
-    $installing_function "$args"
-    success "Finished installing $name."
+	local name="Installing $1..."
+	local installing_function="$2"
+	local args="$3"
+	
+	wait_input
+	print_section_header "$name"
+	# Call the passed function by its name with arguments
+	$installing_function "$args"
+	success "Finished installing $name."
 }
 
 
 restart_system() {
-  info "System needs to restart. Restart?"
+	info "System needs to restart. Restart?"
 
 	select yn in "y" "n"; do
 		case $yn in
@@ -58,17 +58,17 @@ restart_system() {
 
 # Function to stow configurations
 stow_configs() {
-  # $1 is DOTFILES_DIR is the directory where your dotfiles are stored
-  #  $2 is the list of directories to stow
-    for config in "${CONFIGS[@]}"; do
-        echo "Stowing $config..."
-        stow --dir="$DOTFILES_DIR" --target="$HOME" "$config"
-        if [ $? -eq 0 ]; then
-            echo "Successfully stowed $config"
-        else
-            echo "Failed to stow $config" >&2
-        fi
-    done
+	# $1 is DOTFILES_DIR is the directory where your dotfiles are stored
+	#  $2 is the list of directories to stow
+	for config in "${CONFIGS[@]}"; do
+			echo "Stowing $config..."
+			stow --dir="$DOTFILES_DIR" --target="$HOME" "$config"
+			if [ $? -eq 0 ]; then
+					echo "Successfully stowed $config"
+			else
+					echo "Failed to stow $config" >&2
+			fi
+	done
 }
 
 setup_github_ssh() {
@@ -85,30 +85,39 @@ setup_github_ssh() {
 	fi
 }
 
-parse_config() {
-  local config_file="$1"
-  declare -n config="$2"  # Declare a reference to the associative array passed as the second argument
+unstow_vscode_settings() {
+	local vscode_dir="$HOME/Library/Application Support/Code/User"
+	local config_dir="$(pwd)/configs/vscode"
 
-  # Read through the configuration file
-  local current_section=""
+	mkdir -p "$config_dir/snippets"
+	
+	[ -f "$vscode_dir/keybindings.json" ] && cp "$vscode_dir/keybindings.json" "$config_dir/keybindings.json"
+	[ -f "$vscode_dir/settings.json" ] && cp "$vscode_dir/settings.json" "$config_dir/settings.json"
+	[ -d "$vscode_dir/snippets" ] && cp "$vscode_dir/snippets/"*.json "$config_dir/snippets/"
+	
+	success "VSCode settings loaded into $config_dir"
+}
 
-  while IFS= read -r line; do
-      # Skip empty lines and comments
-      [[ -z "$line" || "$line" =~ ^# ]] && continue
+stow_vscode_settings() {
+	local vscode_dir="$HOME/Library/Application Support/Code/User"
+	local config_dir="$(pwd)/configs/vscode"
 
-      # Handle section headers
-      if [[ "$line" =~ ^\[(.*)\]$ ]]; then
-          current_section="${BASH_REMATCH[1]}"
-          continue
-      fi
+	echo "Copying VSCode settings from $vscode_dir to $config_dir"
+	[ -f "$config_dir/keybindings.json" ] && cp "$config_dir/keybindings.json" "$vscode_dir/keybindings.json"
+	[ -f "$config_dir/settings.json" ] && cp "$config_dir/settings.json" "$vscode_dir/settings.json"
+	[ -d "$config_dir/snippets" ] && cp "$config_dir/snippets/"*.json "$vscode_dir/snippets/"
+	
+	success "VSCode settings saved from $config_dir"
+}
 
-      # Handle key-value pairs
-      if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
-          local key="${BASH_REMATCH[1]}"
-          local value="${BASH_REMATCH[2]}"
-
-          # Store the key-value pair in the passed associative array
-          config["$current_section:$key"]="$value"
-      fi
-  done < "$config_file"
+print_sections(){
+	local section=$1
+	for section in "${(@k)config}"; do
+		echo "Section: $section"
+		for item in ${(s: :)config[$section]}; do
+			key="${item%%.*}"
+			value="${item#*.}"
+			echo "  $key = $value"
+		done
+	done
 }
