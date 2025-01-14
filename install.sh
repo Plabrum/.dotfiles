@@ -1,6 +1,5 @@
-#!/bin/zsh
+#!/bin/bash
 set -o errexit
-
 
 REPO_URL=https://github.com/plabrum/.dotfiles.git
 REPO_PATH="$HOME/.dotfiles"

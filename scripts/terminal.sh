@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 
 install_homebrew() {
@@ -73,6 +73,7 @@ install_brew_casks() {
 }
 
 install_masApps() {
+  local mas_apps=$*
 	info "Installing App Store apps..."
 	for app in "${mas_apps[@]}"; do
 		mas install "$app"

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 reset_color=$(tput sgr 0)
 
@@ -58,31 +58,25 @@ restart_system() {
 
 # Function to stow configurations
 stow_configs() {
-	# $1 is DOTFILES_DIR is the directory where your dotfiles are stored
-	#  $2 is the list of directories to stow
-	for config in "${CONFIGS[@]}"; do
-			echo "Stowing $config..."
-			stow --dir="$DOTFILES_DIR" --target="$HOME" "$config"
-			if [ $? -eq 0 ]; then
-					echo "Successfully stowed $config"
-			else
-					echo "Failed to stow $config" >&2
-			fi
-	done
+	local to_stow="$(find stow -maxdepth 1 -type d -mindepth 1 | awk -F "/" '{print $NF}' ORS=' ')"
+	info "Stowing: $to_stow"
+	stow -d stow --verbose 1 --target "$HOME" "$to_stow"
 }
 
 setup_github_ssh() {
-	if [ -z "${SSH_PASSPHRASE}" ]; then
-		echo "SSH_PASSPHRASE not set"
-	else
-		info "Using $SSH_PASSPHRASE"
-		ssh-keygen -t ed25519 -C "$SSH_PASSPHRASE"
+	local email
+	read -p "Enter your GitHub email: " email
 
-		info "Adding ssh key to keychain"
-		ssh-add -K ~/.ssh/id_ed25519
+	info "Generating SSH key for $email"
+	ssh-keygen -t ed25519 -C "$email"
 
-		info "Remember add ssh key to github account 'pbcopy < ~/.ssh/id_ed25519.pub'"
-	fi
+	info "Adding SSH key to keychain"
+	ssh-add -K ~/.ssh/id_ed25519
+
+	info "Copying SSH key to clipboard"
+	pbcopy < ~/.ssh/id_ed25519.pub
+
+	success "SSH key generated and copied to clipboard. Add it to your GitHub account."
 }
 
 unstow_vscode_settings() {
@@ -108,16 +102,4 @@ stow_vscode_settings() {
 	[ -d "$config_dir/snippets" ] && cp "$config_dir/snippets/"*.json "$vscode_dir/snippets/"
 	
 	success "VSCode settings saved from $config_dir"
-}
-
-print_sections(){
-	local section=$1
-	for section in "${(@k)config}"; do
-		echo "Section: $section"
-		for item in ${(s: :)config[$section]}; do
-			key="${item%%.*}"
-			value="${item#*.}"
-			echo "  $key = $value"
-		done
-	done
 }
