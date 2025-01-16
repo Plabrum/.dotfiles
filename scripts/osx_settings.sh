@@ -18,9 +18,6 @@ setup_osx() {
 	# Hide mounted servers on desktop
 	defaults write com.apple.finder ShowMountedServersOnDesktop -bool false
 
-	# Hide icons on desktop
-	defaults write com.apple.finder CreateDesktop -bool false
-
 	# Avoid creating .DS_Store files on network volumes
 	defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 
@@ -42,9 +39,6 @@ setup_osx() {
 	# Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
 	defaults write com.apple.screencapture type -string "png"
 
-	# Set weekly software update checks
-	defaults write com.apple.SoftwareUpdate ScheduleFrequency -int 7
-
 	# Set Desktop as the default location for new Finder windows
 	# For other paths, use `PfLo` and `file:///full/path/here/`
 	defaults write com.apple.finder NewWindowTarget -string "PfHm"
@@ -59,23 +53,11 @@ setup_osx() {
 	defaults write NSGlobalDomain WebKitDeveloperExtras -bool true
 
 	# Have the Dock show only active apps
-	defaults write com.apple.dock static-only -bool true
+	defaults write com.apple.dock static-only -bool false
 
 	# Set Dock autohide
 	defaults write com.apple.dock autohide -bool true
 	defaults write com.apple.dock largesize -float 128
 	defaults write com.apple.dock "minimize-to-application" -bool true
 	defaults write com.apple.dock tilesize -float 32
-
-	# Secondary click in external mouse
-	defaults write com.apple.AppleMultitouchMouse MouseButtonMode -string "TwoButton"
-
-	# Disable startup sound
-	sudo nvram SystemAudioVolume=%01
-
-  # Enable ssh agent on start up
-  info "Enabling ssh agent on start up with launchctl"
-  cp "$HOME/.dotfiles/macos/com.openssh.ssh-agent.plist" "$HOME/Library/LaunchAgents/"
-  launchctl load "$HOME/Library/LaunchAgents/com.openssh.ssh-agent.plist"
-  launchctl enable "$HOME/Library/LaunchAgents/com.openssh.ssh-agent.plist"
 }

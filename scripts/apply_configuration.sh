@@ -7,6 +7,10 @@ set -o pipefail
 . scripts/utils.sh
 . scripts/terminal.sh
 . scripts/packages.sh
+. scripts/configure_github.sh
+. scripts/conda.sh
+. scripts/osx_settings.sh
+. scripts/stow_files.sh
 
 echo "Starting installation"
 run_installer "Brew Apps" install_brew_casks brew_apps
@@ -18,6 +22,7 @@ run_installer "VS Code Extensions" install_vs_code_extensions vs_code_extensions
 run_installer "Miniconda" install_miniconda
 run_installer "Conda Packages" install_conda_packages conda_packages
 run_installer "Stowed Configs" stow_configs
-run_installer "Github SSH" setup_github_ssh
 run_installer "VS Code Settings" stow_vscode_settings
+run_installer "Apply OSX Settings" setup_osx
+run_installer "Github SSH" setup_github_ssh
 echo "Miniconda and packages installed successfully."
