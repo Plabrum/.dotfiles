@@ -33,7 +33,7 @@ print_section_header() {
 run_installer() {
 	local name="Installing $1..."
 	local installing_function="$2"
-	local args="$3"
+	local args="${3:-}"
 
 	read -r -p "Would you like to run the $name section? (y/n): " respsonse
 	if [[ "$respsonse" == "y" ]]; then
