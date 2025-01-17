@@ -13,6 +13,7 @@ set -o pipefail
 . scripts/stow_files.sh
 
 echo "Starting installation"
+run_installer "Homebrew" install_homebrew
 run_installer "Brew Apps" install_brew_casks brew_apps
 run_installer "Brew Packages" install_brew_packages brew_packages
 run_installer "Mac App Store Apps" install_masApps mas_apps
@@ -25,4 +26,3 @@ run_installer "Stowed Configs" stow_configs
 run_installer "VS Code Settings" stow_vscode_settings
 run_installer "Apply OSX Settings" setup_osx
 run_installer "Github SSH" setup_github_ssh
-echo "Miniconda and packages installed successfully."
