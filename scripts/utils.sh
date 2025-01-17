@@ -18,6 +18,11 @@ warn() {
 	printf "%s[*] %s%s\n" "$(tput setaf 3)" "$1" "$reset_color"
 }
 
+cleanup() {
+	err "Last command failed"
+	info "Finishing..."
+}
+
 print_section_header() {
 	info "################################################################################"
 	info "$1"
@@ -39,6 +44,7 @@ run_installer() {
 	else
 		info "Skipping $name."
 	fi
+	trap cleanup SIGINT SIGTERM ERR EXIT
 }
 
 restart_system() {
