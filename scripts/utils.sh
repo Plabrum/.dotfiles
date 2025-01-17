@@ -31,7 +31,7 @@ run_installer() {
 	local args="$3"
 
 	read -r -p "Would you like to run the $name section? (y/n): " respsonse
-	if [[ "$respsonse" != "y" ]]; then
+	if [[ "$respsonse" == "y" ]]; then
 		print_section_header "$name"
 		# Call the passed function by its name with arguments
 		$installing_function "$args"
