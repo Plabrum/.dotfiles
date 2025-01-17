@@ -1,7 +1,6 @@
 #!/bin/bash
 
 export brew_apps=(
-	arduino
 	docker
 	google-chrome
 	slack

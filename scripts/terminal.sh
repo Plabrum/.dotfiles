@@ -60,11 +60,17 @@ install_brew_packages() {
 }
 
 install_brew_casks() {
-	local casks=$*
+	local casks=("$@")
+	echo "Casks: ${casks[*]}"
 	for cask in "${casks[@]}"; do
-		if brew list --casks | grep "$cask" >/dev/null; then
+		app_name=$(brew info --json=v2 --cask "$cask" | jq -r '.casks[0].artifacts[] | select(.app) | .app[0]')
+		echo "App name: ${app_name} (from ${app_name:-$cask})"
+		if [ -n "$app_name" ] && [ -d "/Applications/$app_name" ]; then
+			warn "App $app_name is already in Applications"
+		elif brew list --casks | grep "$cask" >/dev/null; then
 			warn "Cask $cask is already installed"
 		else
+			echo "/Applications/$app_name"
 			info "Installing cask < $cask >"
 			brew install --cask "$cask"
 		fi
@@ -72,7 +78,7 @@ install_brew_casks() {
 }
 
 install_masApps() {
-	local mas_apps=$*
+	local mas_apps=("$@")
 	info "Installing App Store apps..."
 	for app in "${mas_apps[@]}"; do
 		mas install "$app"
@@ -80,7 +86,7 @@ install_masApps() {
 }
 
 install_vs_code_extensions() {
-	vs_code_extensions=$*
+	vs_code_extensions=("$@")
 	info "Installing Visual Studio Code extensions..."
 	for extension in "${vs_code_extensions[@]}"; do
 		code --install-extension "$extension"

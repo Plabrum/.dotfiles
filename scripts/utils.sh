@@ -31,15 +31,16 @@ print_section_header() {
 
 # General installation function
 run_installer() {
-	local name="Installing $1..."
+	local name=$1
 	local installing_function="$2"
-	local args="${3:-}"
+	# local args="${3:-}"
+	shift 2
 
 	read -r -p "Would you like to run the $name section? (y/n): " respsonse
 	if [[ "$respsonse" == "y" ]]; then
 		print_section_header "$name"
 		# Call the passed function by its name with arguments
-		$installing_function "$args"
+		$installing_function "$@"
 		success "Finished installing $name."
 	else
 		info "Skipping $name."
