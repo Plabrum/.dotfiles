@@ -1,5 +1,7 @@
 #!/bin/bash
 
+reset_color=$(tput sgr 0)
+
 info() {
 	printf "%s[*] %s%s\n" "$(tput setaf 4)" "$1" "$reset_color"
 }
