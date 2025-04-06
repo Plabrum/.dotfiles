@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define variables
-DOTFILES_REPO="$HOME/dotfiles"     # Path to your dotfiles repository
+DOTFILES_REPO="$HOME/.dotfiles"    # Path to your dotfiles repository
 BACKUP_DIR="$DOTFILES_REPO/backup" # Directory to store backups of modified files
 
 # Check if the dotfiles repository exists
@@ -16,13 +16,13 @@ mkdir -p "$BACKUP_DIR"
 echo "Unstowing dotfiles and copying them to the repository..."
 
 # Loop through each stow package in the repository
-for package in "$DOTFILES_REPO"/*/; do
+for package in "$DOTFILES_REPO"/stow/*/; do
 	package_name=$(basename "$package")
 
 	echo "Processing package: $package_name"
 
 	# Check if the package is currently stowed
-	stow -n -D -d "$DOTFILES_REPO" -t "$HOME" "$package_name" &>/dev/null
+	stow -n -D -d "$DOTFILES_REPO"/stow -t "$HOME" "$package_name" &>/dev/null
 	if [[ $? -ne 0 ]]; then
 		echo "  Skipping: $package_name is not stowed."
 		continue
