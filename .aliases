@@ -1,5 +1,5 @@
 # Misc
-alias va="vim ~/.aliases"
+alias va="nvim ~/.aliases"
 alias publicIP="dig +short myip.opendns.com @resolver1.opendns.com"
 alias startDev="watchexec -c -r npm start"
 
@@ -14,3 +14,8 @@ alias gcd="git checkout @{-1}"
 alias gbl="git for-each-ref --count=15 --sort=-committerdate refs/heads/ --format='%(refname:short)'"
 alias gpr="git stash && gcm && git pull && gcd && git rebase main && git stash pop"
 alias gfp="git push --force"
+alias spec="(cd ~/moab/core && make spec) && (cd ~/moab/web && make spec)"
+alias dcore='docker compose up -d core && docker update --restart always $(docker compose ps -q core) && docker compose logs -f core'
+alias hh='hitchhiker'
+alias drun="docker compose run --rm core flask commands run "
+alias s="spotify"
