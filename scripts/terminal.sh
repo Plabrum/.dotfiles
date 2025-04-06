@@ -93,12 +93,6 @@ install_vs_code_extensions() {
 	done
 }
 
-# Function to stow configurations
-stow_configs() {
-	local -r to_stow="$(find stow -maxdepth 1 -type d -mindepth 1 | awk -F "/" '{print $NF}' ORS=' ')"
-	info "Stowing: $to_stow"
-	stow -d stow --verbose 1 --target "$HOME" "$to_stow"
-}
 
 unstow_vscode_settings() {
 	local vscode_dir="$HOME/Library/Application Support/Code/User"
@@ -114,7 +108,7 @@ unstow_vscode_settings() {
 }
 
 stow_vscode_settings() {
-	ocal vscode_dir="$HOME/Library/Application Support/Code/User"
+	local vscode_dir="$HOME/Library/Application Support/Code/User"
 	local -r config_dir="$(pwd)/configs/vscode"
 
 	echo "Copying VSCode settings from $vscode_dir to $config_dir"

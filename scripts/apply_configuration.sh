@@ -11,6 +11,8 @@ set -o pipefail
 . scripts/conda.sh
 . scripts/osx_settings.sh
 . scripts/stow_files.sh
+run_installer "Stowed Configs" stow_configs
+exit 0
 
 echo "Starting installation"
 run_installer "Homebrew" install_homebrew
@@ -26,3 +28,4 @@ run_installer "Stowed Configs" stow_configs
 run_installer "VS Code Settings" stow_vscode_settings
 run_installer "Apply OSX Settings" setup_osx
 run_installer "Github SSH" setup_github_ssh
+exit 0

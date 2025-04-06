@@ -10,8 +10,10 @@ Mac Os Dotfiles
 
 Inspo:
 
-https://github.com/Stratus3D/dotfiles/blob/master/scripts/setup/darwin.sh
+<https://github.com/Stratus3D/dotfiles/blob/master/scripts/setup/darwin.sh>
 
-https://github.com/protiumx/.dotfiles/tree/main
+<https://github.com/protiumx/.dotfiles/tree/main>
 
-https://github.com/joshukraine/dotfiles?tab=readme-ov-file
+<https://github.com/joshukraine/dotfiles?tab=readme-ov-file>
+
+<https://github.com/anishathalye/dotbot>
