@@ -22,7 +22,7 @@ return {
         -- Define your formatters
         formatters_by_ft = {
           lua = { "stylua" },
-          python = { "isort", "black" },
+          python = { "isort", "black", "autoflake" },
           typescript = { "prettierd", "prettier", stop_after_first = true },
           typescriptreact = { "prettierd", "prettier", stop_after_first = true },
         },
@@ -35,15 +35,6 @@ return {
       },
     },
   },
-  -- {
-  --   "nvim-treesitter/nvim-treesitter",
-  --   opts = function(_, opts)
-  --     if type(opts.ensure_installed) == "table" then
-  --       vim.list_extend(opts.ensure_installed, { "terraform", "hcl" })
-  --     end
-  --   end,
-  -- },
-
   {
     "neovim/nvim-lspconfig",
     ---@class PluginLspOpts
@@ -58,9 +49,6 @@ return {
         },
       },
       servers = {
-        terraformls = {
-          terraform = { path = "/opt/homebrew/bin/terraform" },
-        },
         basedpyright = {
           settings = {
             basedpyright = {

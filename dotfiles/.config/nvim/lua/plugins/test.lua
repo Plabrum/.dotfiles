@@ -25,7 +25,8 @@ return {
         opts.adapters,
         require("neotest-python")({
           dap = { justMyCode = false },
-          args = { "--maxfail=1", "--disable-warnings" },
+          root_files = { "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile" },
+          runner = "pytest",
           cwd = function()
             return vim.fn.getcwd()
           end,
