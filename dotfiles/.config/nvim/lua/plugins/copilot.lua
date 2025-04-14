@@ -6,42 +6,42 @@ return {
   --     require("copilot.api").status = require("copilot.status")
   --   end,
   -- },
-  {
-    "saghen/blink.cmp",
-    opts = {
-      keymap = {
-        ["<C-q>"] = { "show", "hide" },
-        ["<Up>"] = { "select_prev", "fallback" },
-        ["<Down>"] = { "select_next", "fallback" },
-        ["<CR>"] = { "accept", "fallback" },
-        ["<Right>"] = { "accept", "fallback" },
-        ["<Left>"] = { "hide" },
-      },
-    },
-  },
-  {
-    "zbirenbaum/copilot.lua",
-    cmd = "Copilot",
-    build = ":Copilot auth",
-    event = "BufReadPost",
-    opts = {
-      suggestion = {
-        enabled = not vim.g.ai_cmp,
-        auto_trigger = true,
-        hide_during_completion = vim.g.ai_cmp,
-        keymap = {
-          accept = false, -- handled by nvim-cmp / blink.cmp
-          next = "<M-]>",
-          prev = "<M-[>",
-        },
-      },
-      panel = { enabled = false },
-      filetypes = {
-        markdown = true,
-        help = true,
-      },
-    },
-  },
+  -- {
+  --   "saghen/blink.cmp",
+  --   opts = {
+  --     keymap = {
+  --       ["<C-q>"] = { "show", "hide" },
+  --       ["<Up>"] = { "select_prev", "fallback" },
+  --       ["<Down>"] = { "select_next", "fallback" },
+  --       ["<CR>"] = { "accept", "fallback" },
+  --       ["<Right>"] = { "accept", "fallback" },
+  --       ["<Left>"] = { "hide" },
+  --     },
+  --   },
+  -- },
+  -- {
+  --   "zbirenbaum/copilot.lua",
+  --   cmd = "Copilot",
+  --   build = ":Copilot auth",
+  --   event = "BufReadPost",
+  --   opts = {
+  --     suggestion = {
+  --       enabled = not vim.g.ai_cmp,
+  --       auto_trigger = true,
+  --       hide_during_completion = vim.g.ai_cmp,
+  --       keymap = {
+  --         accept = false, -- handled by nvim-cmp / blink.cmp
+  --         next = "<M-]>",
+  --         prev = "<M-[>",
+  --       },
+  --     },
+  --     panel = { enabled = false },
+  --     filetypes = {
+  --       markdown = true,
+  --       help = true,
+  --     },
+  --   },
+  -- },
   {
     "CopilotC-Nvim/CopilotChat.nvim",
     -- dependencies = {
