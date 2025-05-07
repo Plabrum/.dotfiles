@@ -17,8 +17,8 @@ return {
     "christopher-francisco/tmux-status.nvim",
     lazy = true,
     opts = {
-      force_show = true,
-      manage_tmux_status = true,
+      -- force_show = false,
+      manage_tmux_status = false,
     },
   },
 }

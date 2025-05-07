@@ -2,50 +2,64 @@
 return {
   {
     "mfussenegger/nvim-lint",
-    opts = {
-      events = { "BufWritePost", "BufReadPost", "InsertLeave" },
-      linters_by_ft = {
-        python = { "flake8", "dmypy" },
-      },
-    },
+    opts = function(_, opts)
+      -- Extend or initialize the events
+      opts.events = opts.events or {}
+      vim.list_extend(opts.events, { "BufWritePost", "BufReadPost", "InsertLeave" })
+
+      -- Extend or initialize linters_by_ft
+      opts.linters_by_ft = opts.linters_by_ft or {}
+      opts.linters_by_ft.python = { "flake8", "dmypy" }
+
+      -- Extend or initialize linters
+      opts.linters = opts.linters or {}
+      opts.linters.sqlfluff = {
+        args = {
+          "lint",
+          "--format=json",
+          "--dialect=postgres",
+        },
+      }
+
+      return opts
+    end,
   },
 
   {
     "stevearc/conform.nvim",
-    event = { "BufWritePre" },
-    cmd = { "ConformInfo" },
-    -- This will provide type hinting with LuaLS
-    ---@module "conform"
-    ---@type conform.setupOpts
-    opts = {
-      default_format_opts = {
-        -- Define your formatters
-        formatters_by_ft = {
-          lua = { "stylua" },
-          python = { "isort", "black", "autoflake" },
-          typescript = { "prettierd", "prettier", stop_after_first = true },
-          typescriptreact = { "prettierd", "prettier", stop_after_first = true },
-        },
+    opts = function(_, opts)
+      opts.formatters_by_ft = opts.formatters_by_ft or {}
 
-        format_on_save = {
-          -- I recommend these options. See :help conform.format for details.
-          lsp_format = "fallback",
-          timeout_ms = 500,
-        },
-      },
-    },
+      opts.formatters_by_ft.lua = { "stylua" }
+      opts.formatters_by_ft.python = { "isort", "black", "autoflake" }
+      opts.formatters_by_ft.typescript = {
+        "prettierd",
+        "prettier",
+        stop_after_first = true,
+      }
+      opts.formatters_by_ft.typescriptreact = {
+        "prettierd",
+        "prettier",
+        stop_after_first = true,
+      }
+
+      return opts
+    end,
   },
   {
     "neovim/nvim-lspconfig",
     ---@class PluginLspOpts
     opts = {
       inlay_hints = { enabled = false },
-      codelens = {
-        enabled = true,
-      },
+      -- codelens = {
+      --   enabled = true,
+      -- },
       diagnostics = {
+        --   virtual_lines = {
+        --     current_line = true,
+        --   },
         virtual_text = {
-          current_line = true,
+          current_line = false,
         },
       },
       servers = {

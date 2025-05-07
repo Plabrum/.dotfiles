@@ -8,18 +8,20 @@ return {
     config = function()
       local Menu = require("org-modern.menu")
       local org_path = function(path)
-        local org_directory = "~/orgfiles"
+        local org_directory = "~/org"
         return ("%s/%s"):format(org_directory, path)
       end
       require("orgmode").setup({
         org_agenda_files = org_path("**/*"),
         org_default_notes_file = org_path("refile.org"),
 
-        win_split_mode = "vertical",
+        win_split_mode = "auto",
+        -- win_split_mode = "vertical",
+        win_border = "rounded",
         org_agenda_span = "week",
 
-        org_agenda_skip_scheduled_if_done = true,
-        org_agenda_skip_deadline_if_done = true,
+        -- org_agenda_skip_scheduled_if_done = true,
+        -- org_agenda_skip_deadline_if_done = true,
         org_agenda_skip_if_done = true,
         org_hide_emphasis_markers = true,
         org_agenda_text_search_extra_files = { "agenda-archives" },
@@ -27,11 +29,22 @@ return {
         org_startup_indented = true,
         -- org_highlight_latex_and_related = true,
         org_log_into_drawer = "LOGBOOK",
-        org_todo_keywords = { "TODO(t)", "IN_PROGRESS(p)", "|", "DONE(d)", "CANCELED(c)" },
+        org_todo_keywords = { "TODO(t)", "IN_PROGRESS(p)", "IN_REVIEW(r)", "|", "DONE(d)", "CANCELED(c)" },
         org_todo_keyword_faces = {
-          IN_PROGRESS = ":foreground purple :weight bold",
+          TODO = ":foreground orange :weight bold",
+          IN_PROGRESS = ":foreground yellow :weight bold",
+          IN_REVIEW = ":foreground black :background green :weight bold",
           DONE = ":foreground green :weight bold",
           CANCELED = ":foreground grey :weight bold",
+        },
+        -- Notifications
+        notifications = {
+          enabled = true,
+          repeater_reminder_time = 10,
+          deadline_warning_reminder_time = 0,
+          reminder_time = { 10, 5 },
+          deadline_reminder = true,
+          scheduled_reminder = true,
         },
         mappings = {
           org_return_uses_meta_return = false,
@@ -44,13 +57,31 @@ return {
             description = "Agenda",
             types = {
               {
-                type = "tags",
-                match = "REVISIT",
-                org_agenda_overriding_header = "Tasks to revisit",
+                type = "tags_todo",
+                match = "moab",
+                org_agenda_overriding_header = "Moab tasks",
+                org_agenda_sorting_strategy = { "time-up", "priority-down", "category-keep" },
+                org_agenda_remove_tags = true, -- Do not show tags only for this view
+                -- org_agenda_skip_if_done = true,
               },
               {
                 type = "agenda",
-                org_agenda_tag_filter_preset = "-REVISIT",
+                match = "moab",
+                org_agenda_overriding_header = "My daily agenda",
+                org_agenda_span = "day", -- can be any value as org_agenda_spanorganize
+                org_agenda_todo_ignore_scheduled = "all",
+                org_agenda_remove_tags = true, -- Do not show tags only for this view
+              },
+              {
+                type = "tags_todo",
+                org_agenda_overriding_header = "Personal tasks",
+                org_agenda_tag_filter_preset = "personal",
+                org_agenda_remove_tags = true, -- Do not show tags only for this view
+              },
+              {
+                type = "tags_todo",
+                org_agenda_overriding_header = "Other tasks",
+                org_agenda_tag_filter_preset = "-personal -moab",
               },
             },
           },
@@ -66,9 +97,21 @@ return {
             template = "* %^{Title} %^g\n%?\n%U",
             target = org_path("ideas.org"),
           },
-          q = {
+          n = {
             description = "Quick Note",
-            template = "* %^{Title} \n%?\n%U",
+            template = "* %?\n%U",
+          },
+          c = {
+            description = "Code Question",
+            template = "* %^{Question} \n%a\n%U",
+            target = org_path("moab.org"),
+            headline = "Depth paths not searched",
+          },
+          m = {
+            description = "Moab todo",
+            template = "* TODO %? \nDEADLINE: %^{Deadline}t\n%U",
+            target = org_path("moab.org"),
+            headline = "Tasks",
           },
           T = {
             description = "Todo",
@@ -131,11 +174,6 @@ return {
     },
   },
   {
-    "lukas-reineke/headlines.nvim",
-    dependencies = "nvim-treesitter/nvim-treesitter",
-    opts = {},
-  },
-  {
     "chipsenkbeil/org-roam.nvim",
     dependencies = {
       { "nvim-orgmode/orgmode" },
@@ -157,7 +195,11 @@ return {
       "nvim-orgmode/orgmode",
       "nvim-telescope/telescope.nvim",
     },
-    opts = {},
+    opts = {
+      extensions = {
+        max_depth = 2,
+      },
+    },
     keys = {
       {
         "<leader>osr",
@@ -183,6 +225,15 @@ return {
         end,
         desc = "Search headings",
       },
+      "n",
+      {
+        "<Leader>or",
+        mode = { "n" },
+        function()
+          require("telescope").extension.orgmode.search_headings({ mode = "orgfiles" })
+        end,
+        desc = "Find org files",
+      },
     },
   },
   {
@@ -199,4 +250,9 @@ return {
       })
     end,
   },
+  --  {
+  -- 'folke/snacks.nvim',
+  --    opts = function(_, opts)
+  --      opts.dashboard.sections
+  --  }
 }

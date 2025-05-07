@@ -11,6 +11,10 @@ return {
     "loctvl842/monokai-pro.nvim",
     lazy = false,
     priority = 1000,
+    config = function()
+      vim.api.nvim_set_hl(0, "SnacksPickerDir", { fg = "#928374" })
+      vim.api.nvim_set_hl(0, "SnacksPickerPathHidden", { fg = "#928374" })
+    end,
     opts = {
       theme = "classic",
       colorscheme = "classic",
@@ -22,11 +26,11 @@ return {
     lazy = false,
     priority = 1000,
     opts = {
-      style = "moon",
+      style = "night",
       -- transparent = true,
       -- styles = {
-      -- sidebars = "transparent",
-      -- floats = "transparent",
+      --   sidebars = "transparent",
+      --   floats = "transparent",
       -- },
     },
   },
@@ -34,8 +38,9 @@ return {
   {
     "LazyVim/LazyVim",
     opts = {
-      -- colorscheme = "monokai-pro",
-      colorscheme = "tokyonight-moon",
+      -- colorscheme = "monokai-pro-classic",
+      -- colorscheme = "tokyonight",
+      colorscheme = "catppuccin",
     },
   },
 }
