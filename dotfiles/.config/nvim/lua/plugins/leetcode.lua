@@ -1,20 +1,40 @@
 local leet_arg = "leetcode.nvim"
 
 return {
+  -- {
+  --   "kawre/leetcode.nvim",
+  --   build = ":TSUpdate html",
+  --   dependencies = {
+  --     "nvim-telescope/telescope.nvim",
+  --     "nvim-lua/plenary.nvim", -- required by telescope
+  --     "MunifTanjim/nui.nvim",
+  --
+  --     -- optional
+  --     "nvim-treesitter/nvim-treesitter",
+  --     "rcarriga/nvim-notify",
+  --     "nvim-tree/nvim-web-devicons",
+  --   },
+  --   lazy = leet_arg ~= vim.fn.argv()[1],
+  --   opts = {
+  --     -- configuration goes here
+  --     -- arg = leet_arg,
+  --     cmd = "Leet",
+  --     lang = "python3",
+  --     image_support = true,
+  --     plugins = {
+  --       non_standalone = true,
+  --     },
+  --   },
+  -- },
   {
     "kawre/leetcode.nvim",
-    build = ":TSUpdate html",
+    build = ":TSUpdate html", -- if you have `nvim-treesitter` installed
     dependencies = {
       "nvim-telescope/telescope.nvim",
-      "nvim-lua/plenary.nvim", -- required by telescope
+      -- "ibhagwan/fzf-lua",
+      "nvim-lua/plenary.nvim",
       "MunifTanjim/nui.nvim",
-
-      -- optional
-      "nvim-treesitter/nvim-treesitter",
-      "rcarriga/nvim-notify",
-      "nvim-tree/nvim-web-devicons",
     },
-    lazy = leet_arg ~= vim.fn.argv()[1],
     opts = {
       -- configuration goes here
       -- arg = leet_arg,
@@ -29,7 +49,7 @@ return {
   {
     "3rd/image.nvim",
     opts = {
-      -- backend = "ueberzug",
+      backend = "ueberzug",
       -- processor = "magick_rock",
     },
   },

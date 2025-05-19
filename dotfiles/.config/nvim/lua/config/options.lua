@@ -3,9 +3,17 @@
 -- Add any additional options here
 --
 -- In init.lua
-if vim.env.VSCODE then
-  vim.g.vscode = true
-end
+-- if vim.env.VSCODE then
+--   vim.g.vscode = true
+-- end
+
+-- if vim.g.vscode then
+--   local opts = { noremap = true, silent = true }
+--   vim.keymap.set("n", "gr", function()
+--     vim.lsp.buf.references()
+--   end, opts)
+-- end
+--
 vim.g.lazyvim_python_lsp = "basedpyright"
 -- vim.g.python3_host_prog = vim.fn.exepath("python3") -- This finds Python in your PATH
 vim.g.python3_host_prog = "~/.pyenv/versions/neovim/bin/python3"

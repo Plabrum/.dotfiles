@@ -1,5 +1,7 @@
 # MISC
 window-colorspace=display-p3
+cursor-style = "block"
+cursor-style-blink=true
 macos-option-as-alt=true
 mouse-hide-while-typing = true
 copy-on-select=false

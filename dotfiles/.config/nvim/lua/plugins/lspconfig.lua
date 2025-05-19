@@ -42,6 +42,11 @@ return {
         "prettier",
         stop_after_first = true,
       }
+      -- Custom args for black
+      opts.formatters = opts.formatters or {}
+      opts.formatters.black = {
+        prepend_args = { "--line-length", "88" },
+      }
 
       return opts
     end,
