@@ -172,6 +172,12 @@ return {
             target = org_path("moab/todo.org"),
             headline = "Moab Todo's",
           },
+          p = {
+            description = "Personal todo",
+            template = "* TODO %?\n%U",
+            target = org_path("personal/todo.org"),
+            headline = "Personal Todo's",
+          },
         },
         ui = {
           menu = {

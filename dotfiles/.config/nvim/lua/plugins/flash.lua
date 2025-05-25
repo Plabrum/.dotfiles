@@ -4,11 +4,15 @@ return {
   ---@type Flash.Config
   opts = {},
   keys = {
-    { "s", false },
+    { "s", mode = { "n", "x", "o" }, false },
     {
-      "<leader>-<cr>",
+      "<cr>",
       mode = { "n", "x", "o" },
       function()
+        -- Don't activate Flash in quickfix buffers
+        if vim.bo.buftype == "quickfix" then
+          return "<cr>"
+        end
         require("flash").jump()
       end,
       desc = "Flash",

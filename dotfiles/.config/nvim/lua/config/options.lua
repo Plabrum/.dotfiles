@@ -20,5 +20,12 @@ vim.g.python3_host_prog = "~/.pyenv/versions/neovim/bin/python3"
 -- vim.g.python3_host_prog = vim.fn.expand("~/.virtualenvs/default/bin/python3")
 vim.g.lazyvim_prettier_needs_config = true
 vim.opt.wrap = true
-vim.g.snacks_animate = false
-vim.g.ai_cmp = true
+-- vim.g.snacks_animate = false
+-- vim.g.ai_cmp = true
+
+-- Configure cursor appearance and blinking for different modes
+vim.opt.guicursor = {
+  "n-v-c:block-Cursor/lCursor-blinkwait300-blinkon100-blinkoff100",
+  "i-ci:ver25-Cursor/lCursor-blinkwait300-blinkon100-blinkoff100",
+  "r-cr:hor20-Cursor/lCursor-blinkwait300-blinkon100-blinkoff100",
+}
