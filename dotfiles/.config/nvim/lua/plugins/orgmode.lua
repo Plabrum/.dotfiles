@@ -15,8 +15,35 @@ return {
         org_agenda_files = org_path("**/*"),
         org_default_notes_file = org_path("refile.org"),
 
-        win_split_mode = "auto",
         -- win_split_mode = "vertical",
+        win_split_mode = function(name)
+          print("deter", name)
+          -- vertical = string.format("vsplit %s", name)
+          if name ~= "orgagenda" then
+            vim.cmd(string.format("%dsplit %s", 16, name))
+          else
+            -- Make sure it's not a scratch buffer by passing false as 2nd argument
+            local bufnr = vim.api.nvim_create_buf(false, false)
+            --- Setting buffer name is required
+            vim.api.nvim_buf_set_name(bufnr, name)
+
+            local fill = 0.8
+            local width = math.floor((vim.o.columns * fill))
+            local height = math.floor((vim.o.lines * fill))
+            local row = math.floor((((vim.o.lines - height) / 2) - 1))
+            local col = math.floor(((vim.o.columns - width) / 2))
+
+            vim.api.nvim_open_win(bufnr, true, {
+              relative = "editor",
+              width = width,
+              height = height,
+              row = row,
+              col = col,
+              style = "minimal",
+              border = "rounded",
+            })
+          end
+        end,
         win_border = "rounded",
         org_agenda_span = "week",
 
@@ -74,7 +101,7 @@ return {
           },
         },
         org_agenda_custom_commands = {
-          m = {
+          a = {
             description = "Moab Agenda",
             types = {
               {
@@ -154,7 +181,23 @@ return {
           },
         },
       })
+      --
+      -- Override after setup
+      local agenda = require("orgmode.agenda")
+      local original_goto_item = agenda.goto_item
+
+      agenda.goto_item = function(self)
+        local agenda_win = vim.api.nvim_get_current_win()
+        local is_floating = vim.api.nvim_win_get_config(agenda_win).relative ~= ""
+
+        original_goto_item(self)
+
+        if is_floating and vim.api.nvim_win_is_valid(agenda_win) then
+          vim.api.nvim_win_close(agenda_win, false)
+        end
+      end
     end,
+
     keys = {
       {
         "<leader>oa",

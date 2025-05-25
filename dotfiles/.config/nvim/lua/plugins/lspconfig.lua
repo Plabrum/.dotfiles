@@ -45,7 +45,7 @@ return {
       -- Custom args for black
       opts.formatters = opts.formatters or {}
       opts.formatters.black = {
-        prepend_args = { "--line-length", "88" },
+        prepend_args = { "--line-length", "80" },
       }
 
       return opts

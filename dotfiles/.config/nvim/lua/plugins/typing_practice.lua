@@ -3,7 +3,7 @@ return {
     "folke/snacks.nvim",
     optional = true,
     opts = function(_, opts)
-      table.insert(opts.dashboard.preset.keys, 4, { icon = "󱀝 ", key = "T", desc = "Typr", action = ":Typr" })
+      table.insert(opts.dashboard.preset.keys, 4, { icon = "\u{f0f2d}", key = "T", desc = "Typr", action = ":Typr" })
     end,
   },
   {
