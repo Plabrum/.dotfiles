@@ -15,6 +15,7 @@
 -- end
 --
 vim.g.lazyvim_python_lsp = "basedpyright"
+vim.g.lazyvim_blink_main = true
 -- vim.g.python3_host_prog = vim.fn.exepath("python3") -- This finds Python in your PATH
 vim.g.python3_host_prog = "~/.pyenv/versions/neovim/bin/python3"
 -- vim.g.python3_host_prog = vim.fn.expand("~/.virtualenvs/default/bin/python3")

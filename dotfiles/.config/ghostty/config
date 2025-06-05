@@ -11,7 +11,7 @@ window-inherit-working-directory=true
 scrollback-limit = 100000
 
 # DIRECTORY
-working-directory = "Users/phil/moab"
+config-file=?directory_config
 title=" "
 macos-titlebar-proxy-icon=hidden
 
