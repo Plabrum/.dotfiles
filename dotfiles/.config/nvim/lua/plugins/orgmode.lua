@@ -1,6 +1,7 @@
 return {
   {
     "nvim-orgmode/orgmode",
+    event = "VeryLazy",
     dependencies = {
       "danilshvalov/org-modern.nvim",
     },
@@ -53,8 +54,8 @@ return {
         org_hide_emphasis_markers = true,
         org_agenda_text_search_extra_files = { "agenda-archives" },
         org_agenda_start_on_weekday = false,
-        org_startup_folded = "content",
-        org_return_uses_meta_return = true,
+        org_startup_folded = "showeverything",
+        -- org_return_uses_meta_return = true,
         org_startup_indented = true,
         org_highlight_latex_and_related = "native",
         org_log_into_drawer = "LOGBOOK",
@@ -158,11 +159,11 @@ return {
           },
           n = {
             description = "Note",
-            template = "* %^{Title}\n%U\n%?",
+            template = "* %? \n",
           },
           c = {
             description = "Code Question",
-            template = "* %^{Question}\n%U\n%a\n- %?",
+            template = "* %^{Question}\n%U\n%a%?",
             target = org_path("moab/code_questions.org"),
             headline = "Questions",
           },
@@ -170,14 +171,13 @@ return {
             description = "Moab todo",
             template = "* TODO %?\n%U",
             target = org_path("moab/todo.org"),
-            headline = "Moab Todo's",
           },
-          p = {
-            description = "Personal todo",
-            template = "* TODO %?\n%U",
-            target = org_path("personal/todo.org"),
-            headline = "Personal Todo's",
-          },
+          -- p = {
+          --   description = "Personal todo",
+          --   template = "* TODO %?\n%U",
+          --   target = org_path("personal/todo.org"),
+          --   headline = "Personal Todo's",
+          -- },
         },
         ui = {
           menu = {
@@ -217,6 +217,16 @@ return {
           return Org.capture()
         end,
       },
+      {
+        "<leader>of",
+        ft = "org",
+        mode = "n",
+        function()
+          vim.api.nvim_feedkeys("gqgq", "n", false)
+        end,
+        silent = true,
+        desc = "Format Org Table",
+      },
     },
   },
   {
@@ -249,21 +259,20 @@ return {
   --     },
   --   },
   -- },
-  {
-    "chipsenkbeil/org-roam.nvim",
-    dependencies = {
-      { "nvim-orgmode/orgmode" },
-    },
-    opts = {
-      directory = "~/org_roam_files",
-      -- optional
-      -- org_files = {
-      --   "~/another_org_dir",
-      --   "~/some/folder/*.org",
-      --   "~/a/single/org_file.org",
-      -- },
-    },
-  },
+  -- {
+  --   "chipsenkbeil/org-roam.nvim",
+  --   dependencies = {
+  --     { "nvim-orgmode/orgmode" },
+  --   },
+  --   config = function()
+  --     require("org-roam").setup({
+  --       directory = "~/org/notes",
+  --       bindings = {
+  --         prefix = "<LocalLeader>n",
+  --       },
+  --     })
+  --   end,
+  -- },
   {
     "nvim-orgmode/telescope-orgmode.nvim",
     event = "VeryLazy",
@@ -278,35 +287,36 @@ return {
     },
     keys = {
       {
-        "<leader>osr",
+        "<leader>orh",
         mode = { "n" },
+        ft = "org",
         function()
           require("telescope").extensions.orgmode.refile_heading()
         end,
         desc = "Refile heading",
       },
       {
-        "<leader>osl",
+        "<leader>orf",
         mode = { "n" },
+        ft = "org",
         function()
-          require("telescope").extensions.orgmode.insert_link()
+          require("telescope").extensions.orgmode.refile_heading({ mode = "orgfiles" })
         end,
-        desc = "Insert link",
+        desc = "Refile heading",
       },
       {
-        "<leader>osh",
+        "<leader>oh",
         mode = { "n" },
         function()
           require("telescope").extensions.orgmode.search_headings()
         end,
         desc = "Search headings",
       },
-      "n",
       {
-        "<Leader>or",
+        "<Leader>of",
         mode = { "n" },
         function()
-          require("telescope").extension.orgmode.search_headings({ mode = "orgfiles" })
+          require("telescope").extensions.orgmode.search_headings({ mode = "orgfiles" })
         end,
         desc = "Find org files",
       },
@@ -340,9 +350,4 @@ return {
       })
     end,
   },
-  --  {
-  -- 'folke/snacks.nvim',
-  --    opts = function(_, opts)
-  --      opts.dashboard.sections
-  --  }
 }

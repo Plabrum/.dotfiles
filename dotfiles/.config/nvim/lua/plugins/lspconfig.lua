@@ -10,6 +10,7 @@ return {
       -- Extend or initialize linters_by_ft
       opts.linters_by_ft = opts.linters_by_ft or {}
       opts.linters_by_ft.python = { "flake8", "dmypy" }
+      opts.linters_by_ft.markdown = {}
 
       -- Extend or initialize linters
       opts.linters = opts.linters or {}
@@ -25,32 +26,6 @@ return {
     end,
   },
 
-  {
-    "stevearc/conform.nvim",
-    opts = function(_, opts)
-      opts.formatters_by_ft = opts.formatters_by_ft or {}
-
-      opts.formatters_by_ft.lua = { "stylua" }
-      opts.formatters_by_ft.python = { "isort", "black", "autoflake" }
-      opts.formatters_by_ft.typescript = {
-        "prettierd",
-        "prettier",
-        stop_after_first = true,
-      }
-      opts.formatters_by_ft.typescriptreact = {
-        "prettierd",
-        "prettier",
-        stop_after_first = true,
-      }
-      -- Custom args for black
-      opts.formatters = opts.formatters or {}
-      opts.formatters.black = {
-        prepend_args = { "--line-length", "80" },
-      }
-
-      return opts
-    end,
-  },
   {
     "neovim/nvim-lspconfig",
     ---@class PluginLspOpts
@@ -74,17 +49,19 @@ return {
               analysis = {
                 typeCheckingMode = "basic",
                 autoSearchPaths = true,
-                useLibraryCodeForTypes = true,
+                -- autoImportCompletions = true,
+                -- useLibraryCodeForTypes = true,
                 diagnosticMode = "openFilesOnly",
-                importStrategy = "useBundled",
+                -- diagnosticMode = "workspace",
+                -- importStrategy = "useBundled",
               },
-              disableLanguageServices = false,
+              -- disableLanguageServices = false,
             },
           },
-          on_attach = function(client)
-            client.config.settings.basedpyright.disableLanguageServices = false
-            client.notify("workspace/didChangeConfiguration")
-          end,
+          -- on_attach = function(client)
+          --   client.config.settings.basedpyright.disableLanguageServices = false
+          --   client.notify("workspace/didChangeConfiguration")
+          -- end,
         },
         ruff = { enabled = false },
       },

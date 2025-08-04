@@ -5,6 +5,9 @@ return {
     search = {
       enable = true,
     },
+    gitsights = {
+      enable = false,
+    },
     excluded_filetypes = {},
     current_only = true,
   },

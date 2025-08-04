@@ -4,21 +4,25 @@ cursor-style = "block"
 cursor-style-blink=true
 macos-option-as-alt=true
 mouse-hide-while-typing = true
-copy-on-select=false
+#copy-on-select=false
 shell-integration="zsh"
 confirm-close-surface=false
 window-inherit-working-directory=true
 scrollback-limit = 100000
+macos-option-as-alt = left
+keybind = unconsumed:shift+enter=unbind
+maximize =true
 
 # DIRECTORY
 config-file=?directory_config
-title=" "
-macos-titlebar-proxy-icon=hidden
+# title=" "
+# macos-titlebar-proxy-icon=hidden
 
 # THEMES
 #theme=tokyonight_night
 #theme=Monokai Classic
-theme=catppuccin-mocha
+#theme=catppuccin-frappe
+theme=sonokai
 
 # FONT
 font-size=14

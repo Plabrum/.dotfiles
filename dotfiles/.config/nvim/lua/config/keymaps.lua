@@ -61,10 +61,34 @@ local function goto_definition_in_new_window()
   end)
 end
 
+local function safe_map(lhs, rhs, opts)
+  opts = opts or {}
+  opts.expr = true
+  opts.desc = opts.desc or ""
+  vim.keymap.set("n", lhs, function()
+    if vim.bo.filetype ~= "snacks_picker" and vim.bo.buftype == "" then
+      return rhs
+    else
+      return lhs
+    end
+  end, opts)
+end
+
+safe_map("H", "^", { desc = "Move to beginning of line unless in picker" })
+safe_map("L", "$", { desc = "Move to end of line unless in picker" })
+
 local map = vim.keymap.set
-map("n", "H", "^", { desc = "Move to beginning of line" })
-map("n", "L", "$", { desc = "Move to end of line" })
+-- map("n", "H", "^", { desc = "Move to beginning of line" })
+-- map("n", "L", "$", { desc = "Move to end of line" })
 map("n", "gw", goto_definition_in_new_window, { desc = "Go to definition in next window" })
 map("n", "q", "<Nop>", { noremap = true, silent = true })
 map("i", "jj", "<Esc>", { noremap = false })
 map("i", "jk", "<Esc>", { noremap = false })
+-- map("t", "<Esc>", [[<C-\><C-n>]], { noremap = true, silent = true })
+-- Paste system clipboard in Insert mode using <C-v>
+map("i", "<C-v>", "<C-r>+", { noremap = true, silent = true, desc = "Paste from system clipboard" })
+map("n", "<leader>yy", function()
+  local save_cursor = vim.fn.getpos(".")
+  vim.cmd('keepjumps normal! gg"+yG')
+  vim.fn.setpos(".", save_cursor)
+end, { desc = "Yank entire buffer to clipboard" })

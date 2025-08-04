@@ -1,5 +1,3 @@
-local leet_arg = "leetcode.nvim"
-
 return {
   -- {
   --   "kawre/leetcode.nvim",
@@ -28,6 +26,7 @@ return {
   -- },
   {
     "kawre/leetcode.nvim",
+    event = "VeryLazy",
     build = ":TSUpdate html", -- if you have `nvim-treesitter` installed
     dependencies = {
       "nvim-telescope/telescope.nvim",
@@ -48,10 +47,8 @@ return {
   },
   {
     "3rd/image.nvim",
-    opts = {
-      backend = "ueberzug",
-      -- processor = "magick_rock",
-    },
+    event = "VeryLazy",
+    dependencies = { "luarocks.nvim" },
   },
   {
     "folke/snacks.nvim",
