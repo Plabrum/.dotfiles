@@ -1,5 +1,6 @@
 -- Show linters for the current buffer's file type
 return {
+  { "dmmulroy/ts-error-translator.nvim", opts = {} },
   {
     "mfussenegger/nvim-lint",
     opts = function(_, opts)
@@ -67,4 +68,45 @@ return {
       },
     },
   },
+  -- {
+  --   "neovim/nvim-lspconfig",
+  --   ---@class PluginLspOpts
+  --   opts = {
+  --     inlay_hints = { enabled = false },
+  --     diagnostics = {
+  --       virtual_text = {
+  --         current_line = false,
+  --       },
+  --     },
+  --     servers = {
+  --       basedpyright = {
+  --         settings = {
+  --           basedpyright = {
+  --             analysis = {
+  --               typeCheckingMode = "basic",
+  --               autoSearchPaths = true,
+  --               diagnosticMode = "wodkspace",
+  --               autoImportCompletions = true,
+  --             },
+  --           },
+  --           on_attach = function(client, bufnr)
+  --             -- after a short warmup, switch to openFilesOnly to avoid heavy reindexing on each save
+  --             vim.defer_fn(function()
+  --               local new = {
+  --                 basedpyright = { analysis = { diagnosticMode = "openFilesOnly" } },
+  --               }
+  --               client.config.settings = vim.tbl_deep_extend("force", client.config.settings or {}, new)
+  --               client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
+  --             end, 4000) -- tweak delay if needed
+  --           end,
+  --         },
+  --       },
+  --       -- on_attach = function(client)
+  --       --   client.config.settings.basedpyright.disableLanguageServices = false
+  --       --   client.notify("workspace/didChangeConfiguration")
+  --       -- end,
+  --     },
+  --     ruff = { enabled = false },
+  --   },
+  -- },
 }

@@ -1,5 +1,4 @@
 return {
-  { "catppuccin/nvim", name = "catppuccin", priority = 1000 },
   {
     "rebelot/kanagawa.nvim",
     opts = {
@@ -7,21 +6,20 @@ return {
       -- transparent = true,
     },
   },
-  { "sainnhe/sonokai", opts = {} },
-  {
-    "loctvl842/monokai-pro.nvim",
-    lazy = false,
-    priority = 1000,
-    config = function()
-      vim.api.nvim_set_hl(0, "SnacksPickerDir", { fg = "#928374" })
-      vim.api.nvim_set_hl(0, "SnacksPickerPathHidden", { fg = "#928374" })
-    end,
-    opts = {
-      theme = "classic",
-      colorscheme = "classic",
-      filter = "classic",
-    },
-  },
+  -- {
+  --   "loctvl842/monokai-pro.nvim",
+  --   lazy = false,
+  --   priority = 1000,
+  --   config = function()
+  --     vim.api.nvim_set_hl(0, "SnacksPickerDir", { fg = "#928374" })
+  --     vim.api.nvim_set_hl(0, "SnacksPickerPathHidden", { fg = "#928374" })
+  --   end,
+  --   opts = {
+  --     theme = "classic",
+  --     colorscheme = "classic",
+  --     filter = "classic",
+  --   },
+  -- },
   {
     "folke/tokyonight.nvim",
     lazy = false,
@@ -44,7 +42,7 @@ return {
     config = function()
       -- Optionally configure and load the colorscheme
       -- directly inside the plugin declaration.
-      vim.g.sonokai_enable_italic = true
+      vim.g.sonokai_enable_italic = false
       vim.cmd.colorscheme("sonokai")
     end,
   },
