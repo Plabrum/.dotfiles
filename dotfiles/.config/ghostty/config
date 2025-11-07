@@ -1,4 +1,6 @@
 # MISC
+# window-padding-color = extend-always
+window-padding-balance = true
 window-colorspace=display-p3
 cursor-style = "block"
 cursor-style-blink=true
@@ -10,7 +12,6 @@ confirm-close-surface=false
 window-inherit-working-directory=true
 scrollback-limit = 100000
 macos-option-as-alt = left
-keybind = unconsumed:shift+enter=unbind
 maximize =true
 
 # DIRECTORY
@@ -38,6 +39,7 @@ background-blur-radius = 10
 keybind=global:opt+grave_accent=toggle_quick_terminal
 quick-terminal-screen="mouse"
 
-# window-padding-balance = true
+
 # macos-icon="custom-style"
 # macos-icon-frame="beige"
+keybind = shift+enter=text:\x1b\r

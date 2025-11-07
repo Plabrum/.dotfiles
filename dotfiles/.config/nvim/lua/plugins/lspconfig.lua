@@ -1,6 +1,5 @@
 -- Show linters for the current buffer's file type
 return {
-  { "dmmulroy/ts-error-translator.nvim", opts = {} },
   {
     "mfussenegger/nvim-lint",
     opts = function(_, opts)
@@ -10,7 +9,7 @@ return {
 
       -- Extend or initialize linters_by_ft
       opts.linters_by_ft = opts.linters_by_ft or {}
-      opts.linters_by_ft.python = { "flake8", "dmypy" }
+      -- opts.linters_by_ft.python = { "flake8", "dmypy" }
       opts.linters_by_ft.markdown = {}
 
       -- Extend or initialize linters

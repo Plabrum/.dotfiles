@@ -1,3 +1,6 @@
+if true then
+  return {}
+end
 return {
   -- {
   --   "kawre/leetcode.nvim",
@@ -44,11 +47,6 @@ return {
         non_standalone = true,
       },
     },
-  },
-  {
-    "3rd/image.nvim",
-    event = "VeryLazy",
-    dependencies = { "luarocks.nvim" },
   },
   {
     "folke/snacks.nvim",
