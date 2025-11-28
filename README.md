@@ -1,19 +1,98 @@
 # .dotfiles
 
-Mac Os Dotfiles
+Personal macOS development environment setup and configuration.
 
-## Install Configuration
+## Quick Setup (New Machine)
+
+On a fresh Mac, run this single command:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Plabrum/.dotfiles/refs/heads/main/install.sh)"
+bash <(curl -fsSL https://raw.githubusercontent.com/plabrum/.dotfiles/main/bootstrap.sh)
 ```
 
-Inspo:
+This will:
+1. Install Xcode Command Line Tools
+2. Clone this repository to `~/.dotfiles`
+3. Run the full installation process
 
-<https://github.com/Stratus3D/dotfiles/blob/master/scripts/setup/darwin.sh>
+## What Gets Installed
 
-<https://github.com/protiumx/.dotfiles/tree/main>
+### Package Managers
+- Homebrew
+- Oh My Zsh
 
-<https://github.com/joshukraine/dotfiles?tab=readme-ov-file>
+### Development Tools
+- Neovim, tmux, git, gh (GitHub CLI), lazygit, lazydocker
+- Node.js, Python 3 (+ pyenv, uv)
+- Go, PostgreSQL
+- ripgrep, fzf, jq, shellcheck, shfmt
+- GNU Stow (for dotfiles management)
 
-<https://github.com/anishathalye/dotbot>
+### Applications
+- Docker, Ghostty
+- 1Password, Magnet
+- Alfred, Karabiner Elements
+- Slack, ChatGPT
+- And more (see `scripts/packages.sh`)
+
+### Configurations
+- Neovim config (with LSP, formatters, linters)
+- Tmux config
+- Zsh config with aliases
+- Karabiner Elements key mappings
+- Ghostty terminal settings
+
+### Custom Setup
+- "Open in Neovim" app for file associations
+- File type associations for code files
+- GitHub authentication via `gh` CLI (auto-generates SSH keys)
+
+## Manual Setup (Already Cloned)
+
+If you've already cloned the repo:
+
+```bash
+cd ~/.dotfiles
+./install.sh
+```
+
+The installer will prompt you for each section (Homebrew, packages, etc.) - you can skip sections you don't need.
+
+## Managing Dotfiles
+
+### Stow your configs
+```bash
+./scripts/stow.sh
+```
+
+### Unstow your configs
+```bash
+./scripts/unstow.sh
+```
+
+### Update packages list
+Edit `scripts/packages.sh` to add/remove:
+- `brew_apps` - GUI applications
+- `brew_packages` - CLI tools
+- `mas_apps` - Mac App Store apps
+
+### Add new dotfiles
+1. Add files to `dotfiles/` directory
+2. Run `./scripts/stow.sh` to create symlinks
+
+## Scripts
+
+- `bootstrap.sh` - Initial setup on a fresh Mac
+- `install.sh` - Main installation script
+- `scripts/stow.sh` - Symlink dotfiles to home directory
+- `scripts/unstow.sh` - Remove dotfile symlinks
+- `scripts/create-neovim-app.sh` - Create "Open in Neovim" app
+- `scripts/reset-xcode-file-associations.sh` - Set file type associations
+
+## Credits
+
+Inspired by:
+- <https://github.com/Stratus3D/dotfiles>
+- <https://github.com/protiumx/.dotfiles>
+- <https://github.com/joshukraine/dotfiles>
+- <https://github.com/anishathalye/dotbot>

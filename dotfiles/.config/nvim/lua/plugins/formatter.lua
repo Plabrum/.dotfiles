@@ -13,6 +13,7 @@ return {
       "prettier",
       stop_after_first = true,
     }
+    opts.formatters_by_ft.swift = { "swiftformat" }
 
     return opts
   end,

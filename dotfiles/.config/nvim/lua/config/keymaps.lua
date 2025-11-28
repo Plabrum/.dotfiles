@@ -92,3 +92,13 @@ map("n", "<leader>yy", function()
   vim.cmd('keepjumps normal! gg"+yG')
   vim.fn.setpos(".", save_cursor)
 end, { desc = "Yank entire buffer to clipboard" })
+
+map("n", "<leader>yf", function()
+  local relpath = vim.fn.expand("%")
+  if relpath == "" then
+    vim.notify("No file associated with this buffer", vim.log.levels.WARN)
+    return
+  end
+  vim.fn.setreg("+", relpath)
+  vim.notify("Yanked relative path: " .. relpath)
+end, { desc = "Yank relative file path to clipboard" })
