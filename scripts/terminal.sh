@@ -16,10 +16,14 @@ install_oh_my_zsh() {
 		info "Installing oh my zsh..."
 		ZSH=~/.oh-my-zsh ZSH_DISABLE_COMPFIX=true sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 		chmod 744 ~/.oh-my-zsh/oh-my-zsh.sh
-		# plugins
-		git clone "https://github.com/Aloxaf/fzf-tab ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/fzf-tab"
 	else
 		warn "oh-my-zsh already installed"
+	fi
+
+	# Install custom plugins
+	if [[ ! -d "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting" ]]; then
+		info "Installing zsh-syntax-highlighting plugin..."
+		git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
 	fi
 }
 
