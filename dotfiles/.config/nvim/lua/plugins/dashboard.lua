@@ -9,6 +9,7 @@ local custom_header = [[
 return {
   "folke/snacks.nvim",
   opts = function(_, opts)
+    opts.dashboard.enabled = false
     opts.dashboard.preset.header = custom_header
     opts.dashboard.sections = {
       { section = "header" },

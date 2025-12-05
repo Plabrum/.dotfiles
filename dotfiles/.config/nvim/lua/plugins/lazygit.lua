@@ -3,7 +3,11 @@ return {
   opts = {
     lazygit = {
       win = {
-        style = "dashboard",
+        position = "float",
+        width = 0,
+        height = 0,
+        backdrop = false,
+        border = "none",
       },
     },
   },

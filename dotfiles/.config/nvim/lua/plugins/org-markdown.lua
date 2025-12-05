@@ -1,6 +1,3 @@
--- if true then
---   return {}
--- end
 return {
   { "nvim-mini/mini.test", version = false },
   {
@@ -9,12 +6,22 @@ return {
     dev = true,
     -- "Plabrum/org-markdown",
     opts = {
-      window_method = "vertical",
+      window_method = "float",
       captures = {
         templates = {
-          ["todo"] = {
+          ["Task"] = {
             template = "# TODO %? \n %u",
-            filename = "~/notes/todo.md",
+            filename = "~/org/refile.md",
+            heading = "",
+          },
+          ["Idea"] = {
+            template = "# %? \n %u",
+            filename = "~/org/refile.md",
+            heading = "",
+          },
+          ["Code Pointer"] = {
+            template = "# Pointer: %a \n %? \n %u",
+            filename = "~/org/refile.md",
             heading = "",
           },
         },
