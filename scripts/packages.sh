@@ -13,6 +13,7 @@ export brew_apps=(
   mimestream
   aldente
   karabiner-elements
+  ghostty
 )
 
 export mas_apps=(
@@ -32,7 +33,8 @@ export brew_packages=(
   tmux
   node
   ripgrep
-  fzf
+  fd
+  tree-sitter
   shellcheck
   stow
   postgresql
