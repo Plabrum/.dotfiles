@@ -26,6 +26,53 @@ return {
           },
         },
       },
+      sync = {
+        plugins = {
+          sheets = {
+            file_heading = "Arive Tracker",
+            enabled = true,
+            use_gcloud = true, -- Use OAuth with write permissions
+            quota_project = "env:GOOGLE_QUOTA_PROJECT", -- Google Cloud project ID for billing/quota
+            bidirectional = true, -- Enable write-back to sheet
+            auto_push = true, -- Auto-push on file save
+            spreadsheet_id = "env:SHEETS_SPREADSHEET_ID",
+            sheet_name = "Sheet1",
+
+            -- Column mapping for your sheet
+            columns = {
+              title = "Feature",
+              status = "Status",
+              priority = "Priority",
+              tags = { "Bug Feature" },
+              body = { "Owner", "Notes", "Bug Feature" },
+            },
+
+            -- These are the defaults, customize as needed
+            conversions = {
+              status_map = {
+                ["todo"] = "TODO",
+                ["in progress"] = "IN_PROGRESS",
+                ["done"] = "DONE",
+              },
+              priority_ranges = {
+                { min = 1, max = 3, letter = "A" },
+                { min = 4, max = 6, letter = "B" },
+                { min = 7, max = 10, letter = "C" },
+              },
+              sanitize_tags = true,
+            },
+          },
+          calendar = {
+            enabled = true, -- optional, defaults to true anyway
+            auto_sync = true,
+            sync_file = "~/org/calendar.md", -- optional, this is the default
+            file_heading = "Calendar",
+            days_ahead = 30,
+            calendars = {}, -- all calendars
+            -- other options...
+          },
+        },
+      },
     },
   },
   {

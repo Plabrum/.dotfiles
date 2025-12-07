@@ -2,3 +2,4 @@
 dotfiles/.config/karabiner/automatic_backups
 
 dotfiles/.config/ghostty/directory_config
+dotfiles/.config/nvim/.env
