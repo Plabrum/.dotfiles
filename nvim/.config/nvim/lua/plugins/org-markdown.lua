@@ -1,10 +1,10 @@
 return {
   { "nvim-mini/mini.test", version = false },
   {
-    -- dir = "~/repos/org-markdown",
-    -- name = "org_markdown",
-    -- dev = true,
-    "Plabrum/org-markdown",
+    dir = "~/repos/org-markdown",
+    name = "org_markdown",
+    dev = true,
+    -- "Plabrum/org-markdown",
     opts = {
       window_method = "float",
       captures = {

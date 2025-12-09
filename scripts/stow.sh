@@ -3,19 +3,87 @@ set -euo pipefail
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFILES_DIR="$(dirname "$SCRIPT_DIR")/dotfiles"
+DOTFILES_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Source utils for colored output
 source "$SCRIPT_DIR/utils.sh"
 
-stow_dotfiles() {
-    info "Stowing dotfiles from $DOTFILES_DIR to $HOME"
+# Available packages - modify this list to add/remove packages
+AVAILABLE_PACKAGES=(
+    "zsh"
+    "p10k"
+    "nvim"
+    "tmux"
+    "ghostty"
+    "karabiner"
+    "bin"
+)
 
-    # Check if dotfiles directory exists
-    if [[ ! -d "$DOTFILES_DIR" ]]; then
-        err "Error: dotfiles directory not found at $DOTFILES_DIR"
-        exit 1
+# Default packages to stow if no arguments provided
+DEFAULT_PACKAGES=(
+    "zsh"
+    "nvim"
+    "tmux"
+    "bin"
+)
+
+show_help() {
+    echo "Usage: $(basename "$0") [OPTIONS] [PACKAGES...]"
+    echo ""
+    echo "Stow dotfiles packages to \$HOME using GNU stow"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help     Show this help message"
+    echo "  -l, --list     List available packages"
+    echo "  -a, --all      Stow all available packages"
+    echo ""
+    echo "Available packages:"
+    for pkg in "${AVAILABLE_PACKAGES[@]}"; do
+        echo "  - $pkg"
+    done
+    echo ""
+    echo "Examples:"
+    echo "  $(basename "$0")              # Stow default packages: ${DEFAULT_PACKAGES[*]}"
+    echo "  $(basename "$0") zsh nvim     # Stow only zsh and nvim"
+    echo "  $(basename "$0") --all        # Stow all available packages"
+}
+
+list_packages() {
+    info "Available packages:"
+    for pkg in "${AVAILABLE_PACKAGES[@]}"; do
+        if [[ -d "$DOTFILES_ROOT/$pkg" ]]; then
+            echo "  ✓ $pkg"
+        else
+            echo "  ✗ $pkg (directory not found)"
+        fi
+    done
+}
+
+stow_package() {
+    local package=$1
+    local force_adopt=${2:-false}
+
+    if [[ ! -d "$DOTFILES_ROOT/$package" ]]; then
+        warn "Package '$package' not found at $DOTFILES_ROOT/$package, skipping"
+        return 1
     fi
+
+    info "Stowing package: $package"
+
+    if $force_adopt; then
+        stow -v 1 --adopt -t "$HOME" -d "$DOTFILES_ROOT" "$package"
+    else
+        if stow -v 1 -R -t "$HOME" -d "$DOTFILES_ROOT" "$package" 2>&1; then
+            success "✓ $package stowed successfully"
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
+stow_dotfiles() {
+    local packages=("$@")
 
     # Check if stow is installed
     if ! command -v stow &> /dev/null; then
@@ -23,17 +91,30 @@ stow_dotfiles() {
         exit 1
     fi
 
-    # Stow the dotfiles directory
-    # -v 1 = verbose level 1
-    # -R = restow (unstow first, then stow - useful for updates)
-    # -t = target directory (where symlinks will be created)
-    # -d = source directory (where stow packages are located)
+    # Use default packages if none specified
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        packages=("${DEFAULT_PACKAGES[@]}")
+        info "No packages specified, using defaults: ${packages[*]}"
+    fi
 
-    if stow -v 1 -R -t "$HOME" -d "$(dirname "$DOTFILES_DIR")" dotfiles 2>&1; then
-        success "Dotfiles stowed successfully!"
-    else
-        warn "Stow encountered conflicts with existing files"
-        info "This likely means you have files that aren't symlinks yet"
+    local failed_packages=()
+
+    # Try to stow each package
+    for package in "${packages[@]}"; do
+        if ! stow_package "$package" false; then
+            failed_packages+=("$package")
+        fi
+    done
+
+    # Handle conflicts if any packages failed
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        echo ""
+        warn "Stow encountered conflicts with the following packages:"
+        for pkg in "${failed_packages[@]}"; do
+            echo "  - $pkg"
+        done
+        echo ""
+        info "This likely means you have existing files that aren't symlinks yet"
         info ""
         info "Options:"
         info "  1. Backup and force stow (recommended for first-time setup)"
@@ -46,22 +127,70 @@ stow_dotfiles() {
             mkdir -p "$BACKUP_DIR"
             info "Backing up conflicting files to $BACKUP_DIR"
 
-            # Use --adopt to take existing files into the stow directory temporarily,
-            # then restore the repo versions
-            stow -v 1 --adopt -t "$HOME" -d "$(dirname "$DOTFILES_DIR")" dotfiles
+            # Adopt and restore for each failed package
+            for package in "${failed_packages[@]}"; do
+                info "Adopting conflicts for: $package"
+                stow_package "$package" true
+            done
 
-            # Reset any changes in the dotfiles repo to restore tracked versions
-            cd "$(dirname "$DOTFILES_DIR")"
-            git restore dotfiles/ 2>/dev/null || warn "Could not restore tracked versions (not a git repo?)"
+            # Reset any changes in the repo to restore tracked versions
+            cd "$DOTFILES_ROOT"
+            for package in "${failed_packages[@]}"; do
+                git restore "$package/" 2>/dev/null || warn "Could not restore tracked versions for $package"
+            done
 
-            success "Dotfiles stowed successfully!"
-            info "Original files backed up to: $BACKUP_DIR"
+            success "All packages stowed successfully!"
+            info "Original files were adopted and tracked versions restored"
         else
             info "Stow cancelled. Please resolve conflicts manually."
             exit 1
         fi
+    else
+        echo ""
+        success "All packages stowed successfully!"
     fi
 }
 
-# Run the function
-stow_dotfiles
+# Parse arguments
+PACKAGES=()
+SHOW_HELP=false
+LIST_PACKAGES=false
+STOW_ALL=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            SHOW_HELP=true
+            shift
+            ;;
+        -l|--list)
+            LIST_PACKAGES=true
+            shift
+            ;;
+        -a|--all)
+            STOW_ALL=true
+            shift
+            ;;
+        *)
+            PACKAGES+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Execute based on flags
+if $SHOW_HELP; then
+    show_help
+    exit 0
+fi
+
+if $LIST_PACKAGES; then
+    list_packages
+    exit 0
+fi
+
+if $STOW_ALL; then
+    stow_dotfiles "${AVAILABLE_PACKAGES[@]}"
+else
+    stow_dotfiles "${PACKAGES[@]}"
+fi

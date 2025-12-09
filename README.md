@@ -60,15 +60,58 @@ The installer will prompt you for each section (Homebrew, packages, etc.) - you 
 
 ## Managing Dotfiles
 
+Dotfiles are organized into separate packages that can be independently stowed/unstowed.
+
+### Available Packages
+- `zsh` - Shell configuration (`.zshrc.shared`, `.aliases`)
+- `p10k` - Powerlevel10k theme configuration
+- `nvim` - Neovim configuration
+- `tmux` - Tmux configuration
+- `ghostty` - Ghostty terminal configuration
+- `karabiner` - Karabiner Elements key mappings
+- `bin` - Custom scripts in `.local/bin`
+
 ### Stow your configs
+
+Stow default packages (zsh, nvim, tmux, bin):
 ```bash
 ./scripts/stow.sh
+```
+
+Stow specific packages:
+```bash
+./scripts/stow.sh nvim tmux    # Only stow nvim and tmux
+```
+
+Stow all available packages:
+```bash
+./scripts/stow.sh --all
+```
+
+List available packages:
+```bash
+./scripts/stow.sh --list
 ```
 
 ### Unstow your configs
 ```bash
 ./scripts/unstow.sh
 ```
+
+### Per-Machine Setup for .zshrc
+
+The stow process creates `~/.zshrc.shared` with your shared configuration. On each machine, create a local `~/.zshrc` that sources it:
+
+```bash
+# ~/.zshrc - Machine-specific configuration
+# Add any machine-specific environment variables, paths, or settings here
+export SOME_MACHINE_SPECIFIC_VAR="value"
+
+# Source shared dotfiles configuration
+[ -f ~/.zshrc.shared ] && source ~/.zshrc.shared
+```
+
+This approach allows each machine to have its own customizations while sharing common configuration.
 
 ### Update packages list
 Edit `scripts/packages.sh` to add/remove:
@@ -77,8 +120,8 @@ Edit `scripts/packages.sh` to add/remove:
 - `mas_apps` - Mac App Store apps
 
 ### Add new dotfiles
-1. Add files to `dotfiles/` directory
-2. Run `./scripts/stow.sh` to create symlinks
+1. Add files to the appropriate package directory (e.g., `zsh/`, `nvim/`, etc.)
+2. Run `./scripts/stow.sh <package>` to create symlinks
 
 ## Scripts
 

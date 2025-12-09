@@ -1,5 +1,14 @@
 .DS_Store
-dotfiles/.config/karabiner/automatic_backups
 
+# Karabiner automatic backups
+dotfiles/.config/karabiner/automatic_backups
+karabiner/.config/karabiner/automatic_backups
+
+# Ghostty directory config
 dotfiles/.config/ghostty/directory_config
+ghostty/.config/ghostty/directory_config
+
+# Environment files with secrets
 dotfiles/.config/nvim/.env
+nvim/.config/nvim/.env
+**/.env

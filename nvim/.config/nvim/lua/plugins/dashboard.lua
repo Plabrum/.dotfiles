@@ -9,7 +9,11 @@ local custom_header = [[
 return {
   "folke/snacks.nvim",
   opts = function(_, opts)
-    opts.dashboard.enabled = false
+    -- Check if auto_open_session is enabled in neoconf
+    local neoconf_ok, neoconf = pcall(require, "neoconf")
+    local auto_open = neoconf_ok and neoconf.get("auto_open_session") or false
+
+    opts.dashboard.enabled = not auto_open
     opts.dashboard.preset.header = custom_header
     opts.dashboard.sections = {
       { section = "header" },
