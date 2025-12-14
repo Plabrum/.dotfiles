@@ -13,6 +13,17 @@ REPO_PATH="$HOME/.dotfiles"
 
 print_section_header "Development Environment Setup ($(uname -s))"
 
+# Ask about GUI applications
+read -r -p "Install GUI applications? (Recommended for desktop, skip for servers) (y/n): " install_gui_response
+if [[ "$install_gui_response" == "y" ]]; then
+    INSTALL_GUI_APPS=true
+    info "Will install GUI applications"
+else
+    INSTALL_GUI_APPS=false
+    info "Skipping GUI applications (headless/server mode)"
+fi
+echo ""
+
 # Install Xcode Command Line Tools
 install_xcode_tools() {
     if ! is_macos; then
@@ -92,10 +103,12 @@ main() {
     # 3. Install packages
     run_installer "Homebrew Packages" install_brew_packages "${brew_packages[@]}"
 
-    # macOS-only: Casks and Mac App Store apps
-    if is_macos; then
+    # GUI applications (macOS only: Casks and Mac App Store apps)
+    if [ "$INSTALL_GUI_APPS" = true ] && is_macos; then
         run_installer "Homebrew Applications" install_brew_casks "${brew_apps[@]}"
         run_installer "Mac App Store Apps" install_masApps "${mas_apps[@]}"
+    elif is_macos; then
+        info "Skipping GUI applications (headless/server mode)"
     else
         info "Skipping Homebrew Casks and Mac App Store (macOS only)"
     fi
@@ -111,9 +124,11 @@ main() {
     fi
 
     # macOS-only: Create Neovim app and set file associations
-    if is_macos; then
+    if [ "$INSTALL_GUI_APPS" = true ] && is_macos; then
         run_installer "Neovim.app" bash "$SCRIPT_DIR/scripts/create-neovim-app.sh"
         run_installer "File Associations" bash "$SCRIPT_DIR/scripts/reset-xcode-file-associations.sh"
+    elif is_macos; then
+        info "Skipping Neovim.app and file associations (headless/server mode)"
     else
         info "Skipping Neovim.app and file associations (macOS only)"
     fi
