@@ -24,6 +24,8 @@ export mas_apps=(
 )
 
 # Cross-platform CLI packages (work on both macOS and Linux)
+# NOTE: zsh is NOT in this list - it's installed via native package manager on Linux
+# (in linux-prerequisites.sh) to avoid breaking login features
 export brew_packages=(
   neovim
   git
