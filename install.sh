@@ -103,6 +103,11 @@ main() {
     # 3. Install packages
     run_installer "Homebrew Packages" install_brew_packages "${brew_packages[@]}"
 
+    # macOS-only CLI packages
+    if is_macos; then
+        run_installer "macOS Homebrew Packages" install_brew_packages "${brew_packages_macos[@]}"
+    fi
+
     # GUI applications (macOS only: Casks and Mac App Store apps)
     if [ "$INSTALL_GUI_APPS" = true ] && is_macos; then
         run_installer "Homebrew Applications" install_brew_casks "${brew_apps[@]}"
