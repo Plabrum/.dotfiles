@@ -7,6 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source utils for colored output
 source "$SCRIPT_DIR/utils.sh"
 
+# macOS only
+if ! is_macos; then
+    info "Neovim.app creation is macOS-only, skipping..."
+    exit 0
+fi
+
 APP_NAME="Neovim"
 APP_PATH="/Applications/${APP_NAME}.app"
 WORKFLOW_FILE="${APP_PATH}/Contents/document.wflow"

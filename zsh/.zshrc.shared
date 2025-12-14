@@ -70,9 +70,22 @@ zstyle ':omz:update' mode auto      # update automatically without asking
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(git-branches rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git  macos zsh-syntax-highlighting)
+
+# Platform-specific plugin configuration
+if [ "$(uname -s)" = "Darwin" ]; then
+    plugins=(git macos zsh-syntax-highlighting)
+else
+    plugins=(git zsh-syntax-highlighting)
+fi
 
 source $ZSH/oh-my-zsh.sh
+
+# Add Homebrew to PATH on Linux
+if [ "$(uname -s)" = "Linux" ]; then
+    if [ -f /home/linuxbrew/.linuxbrew/bin/brew ]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    fi
+fi
 
 # User configuration
 

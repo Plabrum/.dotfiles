@@ -1,13 +1,24 @@
 #!/bin/bash
 
 install_homebrew() {
-	export HOMEBREW_CASK_OPTS="--appdir=/Applications"
+	if is_macos; then
+		export HOMEBREW_CASK_OPTS="--appdir=/Applications"
+	fi
+
 	if hash brew &>/dev/null; then
 		warn "Homebrew already installed"
 	else
 		info "Installing homebrew..."
 		sudo --validate # reset `sudo` timeout to use Homebrew install in noninteractive mode
 		NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+
+		# On Linux, add Homebrew to PATH for this session
+		if is_linux; then
+			if [ -f /home/linuxbrew/.linuxbrew/bin/brew ]; then
+				eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+				success "Homebrew installed and added to current session PATH"
+			fi
+		fi
 	fi
 }
 
@@ -40,6 +51,11 @@ install_brew_packages() {
 }
 
 install_brew_casks() {
+	if ! is_macos; then
+		warn "Casks are macOS-only, skipping..."
+		return 0
+	fi
+
 	local casks=("$@")
 	echo "Casks: ${casks[*]}"
 	for cask in "${casks[@]}"; do
@@ -58,6 +74,11 @@ install_brew_casks() {
 }
 
 install_masApps() {
+	if ! is_macos; then
+		warn "Mac App Store is macOS-only, skipping..."
+		return 0
+	fi
+
 	local mas_apps=("$@")
 	info "Installing App Store apps..."
 	for app in "${mas_apps[@]}"; do

@@ -18,6 +18,54 @@ warn() {
 	printf "%s[*] %s%s\n" "$(tput setaf 3)" "$1" "$reset_color"
 }
 
+# Platform detection
+detect_os() {
+	case "$(uname -s)" in
+	Darwin)
+		echo "macos"
+		;;
+	Linux)
+		if [ -f /etc/os-release ]; then
+			. /etc/os-release
+			case "$ID" in
+			ubuntu | debian)
+				echo "debian"
+				;;
+			fedora | rhel | centos | rocky | almalinux)
+				echo "redhat"
+				;;
+			*)
+				echo "linux"
+				;;
+			esac
+		else
+			echo "linux"
+		fi
+		;;
+	*)
+		echo "unknown"
+		;;
+	esac
+}
+
+export OS_TYPE=$(detect_os)
+
+is_macos() {
+	[ "$OS_TYPE" = "macos" ]
+}
+
+is_linux() {
+	[ "$OS_TYPE" = "debian" ] || [ "$OS_TYPE" = "redhat" ] || [ "$OS_TYPE" = "linux" ]
+}
+
+is_debian() {
+	[ "$OS_TYPE" = "debian" ]
+}
+
+is_redhat() {
+	[ "$OS_TYPE" = "redhat" ]
+}
+
 cleanup() {
 	err "Last command failed"
 	info "Finishing..."

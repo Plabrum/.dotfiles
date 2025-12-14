@@ -1,8 +1,15 @@
 #!/bin/bash
 # Open file in Neovim inside existing tmux session (or start one if none)
-# Bring Ghostty to foreground if already open
+# Bring terminal to foreground if already open
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+# Platform-specific PATH and terminal setup
+if [ "$(uname -s)" = "Darwin" ]; then
+    export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    TERMINAL_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+else
+    export PATH="/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    TERMINAL_BIN="ghostty"  # Assumes Ghostty is in PATH on Linux
+fi
 
 file="$1"
 
@@ -17,8 +24,10 @@ fi
 if tmux has-session 2>/dev/null; then
   tmux new-window -n "$win_name" "$cmd" \; select-window -t :$
 else
-  /Applications/Ghostty.app/Contents/MacOS/ghostty -- bash -lc "tmux new-session '$cmd'"
+  $TERMINAL_BIN -- bash -lc "tmux new-session '$cmd'"
 fi
 
-# --- Focus Ghostty ---
-osascript -e 'delay 0.1' -e 'tell application "Ghostty" to activate'
+# Focus terminal - platform specific
+if [ "$(uname -s)" = "Darwin" ]; then
+  osascript -e 'delay 0.1' -e 'tell application "Ghostty" to activate'
+fi

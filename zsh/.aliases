@@ -7,7 +7,13 @@ alias ld="lazydocker"
 
 # System
 alias caff="caffeinate -dimsu"
-alias local_ip="ipconfig getifaddr en0"
+
+# Platform-specific local IP
+if [ "$(uname -s)" = "Darwin" ]; then
+    alias local_ip="ipconfig getifaddr en0"
+else
+    alias local_ip="hostname -I | awk '{print \$1}'"
+fi
 
 # Functions
 port_kill() {

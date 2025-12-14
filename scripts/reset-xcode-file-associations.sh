@@ -2,6 +2,16 @@
 # Reset file associations after Xcode installation
 # Sets "Open in Neovim" as the default for code files
 
+# Get script directory and source utils
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/utils.sh"
+
+# macOS only
+if ! is_macos; then
+    info "File associations with duti are macOS-only, skipping..."
+    exit 0
+fi
+
 # Check if duti is installed
 if ! command -v duti &> /dev/null; then
     echo "duti not found. Installing via Homebrew..."
