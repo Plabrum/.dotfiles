@@ -14,6 +14,11 @@ return {
             filename = "~/org/refile.md",
             heading = "",
           },
+          ["Linear Issue"] = {
+            filename = "~/org/linear-staging.md",
+            heading = "",
+            template = "# TODO %? \n%u",
+          },
           ["Idea"] = {
             template = "# %? \n %u",
             filename = "~/org/refile.md",
@@ -30,7 +35,7 @@ return {
         plugins = {
           sheets = {
             file_heading = "Arive Tracker",
-            enabled = true,
+            enabled = false,
             use_gcloud = true, -- Use OAuth with write permissions
             quota_project = "env:GOOGLE_QUOTA_PROJECT", -- Google Cloud project ID for billing/quota
             bidirectional = true, -- Enable write-back to sheet
@@ -71,6 +76,24 @@ return {
             calendars = {}, -- all calendars
             -- other options...
           },
+          linear = {
+            enabled = true,
+            sync_file = "~/org/linear.md",
+            file_heading = "Arive", -- Optional: YAML frontmatter heading (e.g., "Linear Issues")
+            api_key = "env:LINEAR_API_KEY", -- Required: Linear API key (get from https://linear.app/settings/api)
+            include_assigned = true,
+            include_cycles = false,
+            team_ids = { "ARI" }, -- Empty = all teams
+            heading_level = 2,
+            auto_sync = true,
+            auto_sync_interval = 3600, -- 1 hour
+            push = {
+              enabled = true,
+              staging_file = "~/org/linear-staging.md", -- Capture here
+              default_team_key = "ARI",
+              auto_push = false,
+            },
+          },
         },
       },
     },
@@ -80,6 +103,10 @@ return {
     opts = {
       checkbox = {
         enabled = true,
+      },
+      html_comment = {
+        enabled = true,
+        conceal = false, -- Display comments by default
       },
       heading = {
         sign = true,

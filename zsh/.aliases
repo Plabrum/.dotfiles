@@ -34,3 +34,4 @@ make() {
     print "make: no Makefile found upwards from $PWD" >&2
     return 2
 }
+alias slp='pmset sleepnow'

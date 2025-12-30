@@ -192,5 +192,5 @@ fi
 if $STOW_ALL; then
     stow_dotfiles "${AVAILABLE_PACKAGES[@]}"
 else
-    stow_dotfiles "${PACKAGES[@]}"
+    stow_dotfiles "${PACKAGES[@]+"${PACKAGES[@]}"}"
 fi
