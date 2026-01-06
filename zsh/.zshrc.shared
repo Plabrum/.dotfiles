@@ -123,3 +123,5 @@ export TZ="America/New_York"
 # Powerlevel10k configuration
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
+export EDITOR="nvim"
+export VISUAL="nvim"

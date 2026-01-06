@@ -49,9 +49,10 @@ export brew_packages=(
   pyenv
   fortune
   uv
+  zsh-syntax-highlighting
 )
 
 # macOS-only CLI packages
 export brew_packages_macos=(
-  mas  # Mac App Store CLI
+  mas # Mac App Store CLI
 )

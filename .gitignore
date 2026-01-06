@@ -12,3 +12,4 @@ ghostty/.config/ghostty/directory_config
 dotfiles/.config/nvim/.env
 nvim/.config/nvim/.env
 **/.env
+ghostty/.config/ghostty/directory_config
