@@ -31,6 +31,12 @@ install_oh_my_zsh() {
 		warn "oh-my-zsh already installed"
 	fi
 
+	# Install powerlevel10k theme
+	if [[ ! -d "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k" ]]; then
+		info "Installing powerlevel10k theme..."
+		git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k"
+	fi
+
 	# Install custom plugins
 	if [[ ! -d "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting" ]]; then
 		info "Installing zsh-syntax-highlighting plugin..."

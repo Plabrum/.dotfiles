@@ -15,6 +15,23 @@ return {
     }
     opts.formatters_by_ft.swift = { "swiftformat" }
 
+    -- Python: match pre-commit configuration
+    opts.formatters_by_ft.python = { "ruff_fix", "ruff_format" }
+
+    -- Configure ruff_fix to match pre-commit rules (not --select ALL)
+    opts.formatters = opts.formatters or {}
+    opts.formatters.ruff_fix = {
+      -- Override LazyVim's default --select ALL
+      -- Use rules from pyproject.toml: E, W, F, I, N, UP
+      args = {
+        "check",
+        "--fix",
+        "--force-exclude",
+        "--stdin-filename",
+        "$FILENAME",
+      },
+    }
+
     return opts
   end,
 }

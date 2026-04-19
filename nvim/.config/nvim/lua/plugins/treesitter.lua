@@ -11,9 +11,5 @@ return {
         "markdown_inline",
       },
     },
-    build = function()
-      -- Use Homebrew's signed tree-sitter CLI
-      vim.fn.system({ "/opt/homebrew/bin/tree-sitter", "build-wasm" })
-    end,
   },
 }
