@@ -13,15 +13,21 @@ REPO_PATH="$HOME/.dotfiles"
 
 print_section_header "Development Environment Setup ($(uname -s))"
 
-# Ask about GUI applications
-read -r -p "Install GUI applications? (Recommended for desktop, skip for servers) (y/n): " install_gui_response
-if [[ "$install_gui_response" == "y" ]]; then
-    INSTALL_GUI_APPS=true
-    info "Will install GUI applications"
-else
-    INSTALL_GUI_APPS=false
-    info "Skipping GUI applications (headless/server mode)"
+# Profile selection: minimal is a CLI-only dev environment, full adds GUI apps
+# (macOS only). Override non-interactively with INSTALL_PROFILE=minimal|full.
+INSTALL_PROFILE="${INSTALL_PROFILE:-}"
+if [ -z "$INSTALL_PROFILE" ]; then
+    read -r -p "Install profile [minimal/full] (default: minimal): " profile_input
+    INSTALL_PROFILE="${profile_input:-minimal}"
 fi
+case "$INSTALL_PROFILE" in
+    minimal|full) ;;
+    *)
+        err "Unknown install profile '$INSTALL_PROFILE' (expected minimal or full)"
+        exit 1
+        ;;
+esac
+info "Profile: $INSTALL_PROFILE"
 echo ""
 
 # Install Xcode Command Line Tools
@@ -90,55 +96,51 @@ setup_github() {
 
 # Main installation flow
 main() {
-    # 1. Install build prerequisites
+    # 1. Build prerequisites
     if is_macos; then
         run_installer "Xcode Command Line Tools" install_xcode_tools
     else
         run_installer "Build Prerequisites" install_build_prerequisites
     fi
 
-    # 2. Install Homebrew (works on both platforms)
+    # 2. Homebrew (works on both platforms)
     run_installer "Homebrew" install_homebrew
 
-    # 3. Install packages
-    run_installer "Homebrew Packages" install_brew_packages "${brew_packages[@]}"
+    # 3. Minimal CLI packages (always installed)
+    run_installer "Homebrew Packages" install_brew_packages "${brew_packages_minimal[@]}"
 
-    # macOS-only CLI packages
-    if is_macos; then
-        run_installer "macOS Homebrew Packages" install_brew_packages "${brew_packages_macos[@]}"
+    # 4. Full-profile extras (macOS GUI bundle)
+    if [ "$INSTALL_PROFILE" = "full" ]; then
+        if is_macos; then
+            run_installer "macOS Homebrew Packages" install_brew_packages "${brew_packages_macos_full[@]}"
+            run_installer "Homebrew Applications" install_brew_casks "${brew_apps_full[@]}"
+            run_installer "Mac App Store Apps" install_masApps "${mas_apps_full[@]}"
+        else
+            info "GUI extras skipped (macOS only)"
+        fi
     fi
 
-    # GUI applications (macOS only: Casks and Mac App Store apps)
-    if [ "$INSTALL_GUI_APPS" = true ] && is_macos; then
-        run_installer "Homebrew Applications" install_brew_casks "${brew_apps[@]}"
-        run_installer "Mac App Store Apps" install_masApps "${mas_apps[@]}"
-    elif is_macos; then
-        info "Skipping GUI applications (headless/server mode)"
-    else
-        info "Skipping Homebrew Casks and Mac App Store (macOS only)"
-    fi
-
-    # 4. Install Oh My Zsh
+    # 5. Oh My Zsh + p10k + plugins
     run_installer "Oh My Zsh" install_oh_my_zsh
 
-    # 5. Stow dotfiles
+    # 6. Stow dotfiles
     if [ "$SCRIPT_DIR" = "$REPO_PATH" ]; then
-        run_installer "Dotfiles (Stow)" bash "$SCRIPT_DIR/scripts/stow.sh"
+        if [ "$INSTALL_PROFILE" = "full" ] && is_macos; then
+            run_installer "Dotfiles (Stow)" bash "$SCRIPT_DIR/scripts/stow.sh" --all
+        else
+            run_installer "Dotfiles (Stow)" bash "$SCRIPT_DIR/scripts/stow.sh"
+        fi
     else
         warn "Skipping stow - run from $REPO_PATH after cloning"
     fi
 
-    # macOS-only: Create Neovim app and set file associations
-    if [ "$INSTALL_GUI_APPS" = true ] && is_macos; then
+    # 7. macOS-only GUI extras: Neovim.app + file associations
+    if [ "$INSTALL_PROFILE" = "full" ] && is_macos; then
         run_installer "Neovim.app" bash "$SCRIPT_DIR/scripts/create-neovim-app.sh"
         run_installer "File Associations" bash "$SCRIPT_DIR/scripts/reset-xcode-file-associations.sh"
-    elif is_macos; then
-        info "Skipping Neovim.app and file associations (headless/server mode)"
-    else
-        info "Skipping Neovim.app and file associations (macOS only)"
     fi
 
-    # 6. GitHub SSH setup (cross-platform)
+    # 8. GitHub SSH setup (cross-platform)
     run_installer "GitHub SSH" setup_github
 
     print_section_header "Installation Complete!"

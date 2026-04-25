@@ -1,6 +1,10 @@
 #!/bin/bash
 # Bootstrap script - run this on a fresh system (macOS or Linux)
 # Usage: bash <(curl -fsSL https://raw.githubusercontent.com/plabrum/.dotfiles/main/bootstrap.sh)
+#
+# The installer prompts for an install profile (minimal | full). To skip the
+# prompt and pick non-interactively, set INSTALL_PROFILE before running:
+#   INSTALL_PROFILE=full bash <(curl -fsSL …/bootstrap.sh)
 
 set -euo pipefail
 

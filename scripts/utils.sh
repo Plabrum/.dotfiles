@@ -77,22 +77,16 @@ print_section_header() {
 	info "################################################################################"
 }
 
-# General installation function
+# General installation function. The profile chosen at the top of install.sh
+# decides which sections run; this just announces and executes.
 run_installer() {
 	local name=$1
 	local installing_function="$2"
-	# local args="${3:-}"
 	shift 2
 
-	read -r -p "Would you like to run the $name section? (y/n): " respsonse
-	if [[ "$respsonse" == "y" ]]; then
-		print_section_header "$name"
-		# Call the passed function by its name with arguments
-		$installing_function "$@"
-		success "Finished installing $name."
-	else
-		info "Skipping $name."
-	fi
+	print_section_header "$name"
+	$installing_function "$@"
+	success "Finished installing $name."
 	trap cleanup SIGINT SIGTERM ERR EXIT
 }
 

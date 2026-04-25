@@ -1,7 +1,44 @@
 #!/bin/bash
 
-# GUI applications (macOS only - Homebrew Casks)
-export brew_apps=(
+# Cross-platform CLI packages installed for every profile (minimal + full).
+# NOTE: zsh is NOT in this list - it's installed via native package manager on Linux
+# (in linux-prerequisites.sh) to avoid breaking login features.
+export brew_packages_minimal=(
+  # Shell + editor essentials (configs in this repo depend on these)
+  git
+  gh
+  stow
+  neovim
+  tmux
+  ripgrep
+  fd
+  jq
+  font-blex-mono-nerd-font
+  zsh-syntax-highlighting
+  # Dev tooling
+  python3
+  node
+  go
+  pyenv
+  uv
+  lazygit
+  lazydocker
+  shellcheck
+  shfmt
+  tree-sitter
+  awscli
+  postgresql
+  fortune
+)
+
+# macOS-only CLI packages installed only with the `full` profile.
+# `mas` is required to drive `mas_apps_full`, so it lives with the GUI tier.
+export brew_packages_macos_full=(
+  mas
+)
+
+# GUI applications (macOS only - Homebrew Casks). Full profile only.
+export brew_apps_full=(
   docker
   google-chrome
   slack
@@ -17,42 +54,8 @@ export brew_apps=(
   ghostty
 )
 
-# Mac App Store apps (macOS only)
-export mas_apps=(
+# Mac App Store apps (macOS only). Full profile only.
+export mas_apps_full=(
   1569813296 # 1Password
   441258766  # Magnet
-)
-
-# Cross-platform CLI packages (work on both macOS and Linux)
-# NOTE: zsh is NOT in this list - it's installed via native package manager on Linux
-# (in linux-prerequisites.sh) to avoid breaking login features
-export brew_packages=(
-  neovim
-  git
-  gh
-  lazygit
-  lazydocker
-  jq
-  python3
-  tmux
-  node
-  ripgrep
-  fd
-  tree-sitter
-  shellcheck
-  stow
-  postgresql
-  go
-  awscli
-  font-blex-mono-nerd-font
-  shfmt
-  pyenv
-  fortune
-  uv
-  zsh-syntax-highlighting
-)
-
-# macOS-only CLI packages
-export brew_packages_macos=(
-  mas # Mac App Store CLI
 )

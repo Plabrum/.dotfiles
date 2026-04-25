@@ -22,6 +22,7 @@ AVAILABLE_PACKAGES=(
 # Default packages to stow if no arguments provided
 DEFAULT_PACKAGES=(
     "zsh"
+    "p10k"
     "nvim"
     "tmux"
     "bin"
