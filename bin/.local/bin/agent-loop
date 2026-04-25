@@ -122,12 +122,13 @@ def past_deadline(deadline: datetime | None) -> bool:
     return deadline is not None and datetime.now() >= deadline
 
 
-def check_linear_backlog(project: str) -> bool:
+def check_linear_backlog(project: str, state: str = "Backlog", exclude_label: str | None = None, verbose: bool = False) -> bool:
     """Return True if the Linear backlog has tickets. Uses Claude + MCP."""
+    exclude_clause = f' that do NOT have the label "{exclude_label}"' if exclude_label else ""
     prompt = (
         f'Use the Linear MCP to list issues in the "{project}" project that are in '
-        '"Backlog" state, assigned to me. Reply ONLY with EMPTY if there are zero issues, '
-        "or ONLY with HAS_TICKETS if there are one or more. Nothing else."
+        f'"{state}" state{exclude_clause}. '
+        "Reply ONLY with EMPTY if there are zero such issues, or ONLY with HAS_TICKETS if there are one or more. Nothing else."
     )
     try:
         result = subprocess.run(
@@ -136,10 +137,15 @@ def check_linear_backlog(project: str) -> bool:
             text=True,
             timeout=60,
         )
-        return "HAS_TICKETS" in result.stdout
+        output = result.stdout.strip()
+        if verbose or not output:
+            print(f"    [linear check] raw: {repr(output)}")
+            if result.stderr.strip():
+                print(f"    [linear check] stderr: {result.stderr.strip()[:300]}")
+        return "HAS_TICKETS" in output
     except Exception as e:
         print(f"[agent-loop] Warning: Linear check failed: {e}", file=sys.stderr)
-        return True  # fail open — don't stop the loop on a transient error
+        return True
 
 
 def check_github_backlog(repo: str, label: str) -> bool:
@@ -244,7 +250,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         if backlog_source is not None:
             print(f"--- Checking backlog ({datetime.now().strftime('%H:%M:%S')}) ---")
             if backlog_source[0] == "linear":
-                has_work = check_linear_backlog(backlog_source[1])
+                has_work = check_linear_backlog(backlog_source[1], state=args.linear_state, exclude_label=args.linear_exclude_label, verbose=args.verbose)
             else:
                 has_work = check_github_backlog(backlog_source[1], args.label)
 
@@ -308,6 +314,8 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
     backlog = p.add_mutually_exclusive_group()
     backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name")
     backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
+    p.add_argument("--linear-state", default="Backlog", metavar="STATE", help="Linear state name to check for work (default: Backlog)")
+    p.add_argument("--linear-exclude-label", metavar="LABEL", help="Skip tickets that already have this label (e.g. enriched)")
     p.add_argument("--label", default="backlog", metavar="LABEL", help="GitHub Issues label filter (default: backlog)")
     p.add_argument("--model", default="opus", metavar="MODEL", help="Claude model (default: opus)")
     p.add_argument("--stop-at", metavar="HH:MM", help="Hard deadline; wraps to tomorrow if already past")
@@ -319,6 +327,7 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--log-dir", metavar="DIR", help="Session log directory (default: ~/logs/agent-loop/<name>/)")
     p.add_argument("--name", metavar="NAME", help="Name used in log filenames (default: prompt filename stem)")
+    p.add_argument("--verbose", action="store_true", help="Print raw backlog check responses for debugging")
 
 
 def main() -> None:
