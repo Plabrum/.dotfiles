@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""agent-loop — spawn repeating Claude Code sessions against a Linear or GitHub Issues backlog."""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Embedded meta-prompt for `agent-loop init`
+# ---------------------------------------------------------------------------
+
+INIT_META_PROMPT = """You are helping the user create a tailored agent-prompt.md for their project.
+Each agent session that uses this prompt will be stateless — it knows nothing about prior sessions.
+The issue tracker (Linear or GitHub) is the single source of truth: open = todo, closed/done = finished.
+Your job is to produce a prompt so precise that any session can pick one ticket and complete it correctly with no outside context.
+
+## Step 1 — Read the project silently (do not narrate this to the user)
+- Read CLAUDE.md if it exists
+- Read README.md or README if it exists
+- Run: git log --oneline -20
+- Run: ls scripts/ 2>/dev/null || true
+- Identify the tech stack (languages, frameworks, build tools, test runner)
+
+## Step 2 — Interview the user, ONE question at a time, waiting for each answer
+
+Q1. What is this project? (one sentence)
+
+Q2. Where is the backlog?
+    a) Linear — what is the project name, and what state means "ready to work"? (e.g. Backlog, Todo)
+    b) GitHub Issues — what is the owner/repo and which label marks ready tickets?
+    c) Neither — the agent just runs the prompt on a loop with no backlog check.
+
+Q3. How does the agent pick which ticket to work on?
+    (e.g. highest priority first, lowest ticket number first, specific label ordering, dependencies to respect)
+
+Q4. How does the agent verify its work is correct before closing a ticket?
+    Give me the exact commands: build, type-check, test, lint — whatever this project uses.
+    If there are none, say so explicitly.
+
+Q5. What does closing a ticket look like, step by step?
+    (e.g. move Linear state to Done + leave a comment; open a PR; merge to main; push a branch; nothing)
+
+Q6. What are the branch and commit conventions?
+    (e.g. one branch per ticket named feat/TICK-123-slug; conventional commits; all work on a single branch)
+
+Q7. What are the stack-specific steps that must never be skipped?
+    Think: codegen commands, migration commands, file generation, cache busting, anything easy to forget.
+    List the exact shell commands.
+
+Q8. What is forbidden or dangerous in this project?
+    (e.g. never push to main, never touch generated files directly, never run migrations in production)
+
+## Step 3 — Write the prompt file
+
+After all answers are collected, write ./scripts/agent-prompt.md.
+
+The file must have these sections in this order:
+
+### Mission
+One sentence: what this agent builds and why.
+
+### Orient
+Exact read steps the agent should do at session start to understand the current state of the codebase.
+No PROGRESS.md or session-continuity files — the issue tracker is the only state.
+
+### Pick a ticket
+Concrete rules derived from Q2 and Q3. Include the exact Linear MCP call or gh CLI command.
+Priority ordering, tie-breaking, dependency-skipping rules if any.
+
+### Implement
+Numbered steps. Include the exact shell commands from Q7 woven into the workflow at the right points.
+Reference where patterns live (e.g. "follow the pattern in backend/models/").
+
+### Verify
+The exact commands from Q4, in order. What a passing result looks like. What to do if a check fails.
+
+### Close the ticket
+The exact steps from Q5. Every action, in order, with the precise commands or MCP calls.
+
+### Rules
+Bullet list of hard constraints from Q8, plus: "Work one ticket per session. Stop after closing it."
+
+## Step 4 — Tell the user
+
+Confirm the file was written, show the path, and print the exact agent-loop command to run it.
+"""
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def parse_duration(s: str) -> int:
+    """Parse a duration string like '30m', '1h', '90s' into seconds."""
+    m = re.fullmatch(r"(\d+)(s|m|h)", s.strip())
+    if not m:
+        raise argparse.ArgumentTypeError(
+            f"Invalid duration '{s}'. Use format like 30m, 1h, 90s."
+        )
+    value, unit = int(m.group(1)), m.group(2)
+    return value * {"s": 1, "m": 60, "h": 3600}[unit]
+
+
+def parse_stop_at(s: str) -> datetime:
+    """Parse HH:MM and return the next occurrence of that wall-clock time."""
+    try:
+        t = datetime.strptime(s, "%H:%M")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid time '{s}'. Use HH:MM format.")
+    now = datetime.now()
+    candidate = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def past_deadline(deadline: datetime | None) -> bool:
+    return deadline is not None and datetime.now() >= deadline
+
+
+def check_linear_backlog(project: str) -> bool:
+    """Return True if the Linear backlog has tickets. Uses Claude + MCP."""
+    prompt = (
+        f'Use the Linear MCP to list issues in the "{project}" project that are in '
+        '"Backlog" state, assigned to me. Reply ONLY with EMPTY if there are zero issues, '
+        "or ONLY with HAS_TICKETS if there are one or more. Nothing else."
+    )
+    try:
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions", "-p", prompt, "--model", "haiku"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return "HAS_TICKETS" in result.stdout
+    except Exception as e:
+        print(f"[agent-loop] Warning: Linear check failed: {e}", file=sys.stderr)
+        return True  # fail open — don't stop the loop on a transient error
+
+
+def check_github_backlog(repo: str, label: str) -> bool:
+    """Return True if there are open GitHub Issues matching the label."""
+    try:
+        result = subprocess.run(
+            [
+                "gh", "issue", "list",
+                "--repo", repo,
+                "--state", "open",
+                "--label", label,
+                "--json", "number",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"[agent-loop] Warning: gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
+            return True  # fail open
+        import json
+        issues = json.loads(result.stdout or "[]")
+        return len(issues) > 0
+    except Exception as e:
+        print(f"[agent-loop] Warning: GitHub check failed: {e}", file=sys.stderr)
+        return True
+
+
+def run_session(prompt_text: str, model: str, log_path: Path) -> None:
+    with open(log_path, "w") as logfile:
+        subprocess.run(
+            ["claude", "--dangerously-skip-permissions", "-p", prompt_text, "--model", model],
+            stdout=logfile,
+            stderr=logfile,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> None:
+    print("[agent-loop] Starting init session — Claude will interview you and write scripts/agent-prompt.md")
+    subprocess.run(
+        ["claude", "--dangerously-skip-permissions", "-p", INIT_META_PROMPT],
+    )
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    # Validation
+    if args.check_interval is not None and args.stop_at is None:
+        print("Error: --check-interval requires --stop-at", file=sys.stderr)
+        sys.exit(1)
+
+    prompt_path = Path(args.prompt).expanduser().resolve()
+    if not prompt_path.exists():
+        print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
+        sys.exit(1)
+    prompt_text = prompt_path.read_text()
+
+    # Derive name and log dir
+    name = args.name or prompt_path.stem
+    log_dir = Path(args.log_dir or f"~/logs/agent-loop/{name}").expanduser().resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    deadline = parse_stop_at(args.stop_at) if args.stop_at else None
+    check_interval_secs = args.check_interval  # already int seconds or None
+
+    # Determine backlog source
+    backlog_source = None
+    if args.linear_project:
+        backlog_source = ("linear", args.linear_project)
+    elif args.github_repo:
+        backlog_source = ("github", args.github_repo, args.label)
+
+    # Startup summary
+    print("=== agent-loop ===")
+    print(f"    Prompt:  {prompt_path}")
+    print(f"    Model:   {args.model}")
+    print(f"    Logs:    {log_dir}")
+    if deadline:
+        print(f"    Stop at: {deadline.strftime('%Y-%m-%d %H:%M')}")
+    else:
+        print("    Stop at: (none)")
+    if backlog_source:
+        if backlog_source[0] == "linear":
+            print(f"    Backlog: Linear project '{backlog_source[1]}'")
+        else:
+            print(f"    Backlog: GitHub {backlog_source[1]} label={args.label}")
+    else:
+        print("    Backlog: (no check — runs until deadline or Ctrl-C)")
+    print()
+
+    session = 0
+
+    while True:
+        if past_deadline(deadline):
+            print(f"=== Deadline reached ({datetime.now().strftime('%H:%M:%S')}) — stopping ===")
+            break
+
+        # Check backlog if a source is configured
+        if backlog_source is not None:
+            print(f"--- Checking backlog ({datetime.now().strftime('%H:%M:%S')}) ---")
+            if backlog_source[0] == "linear":
+                has_work = check_linear_backlog(backlog_source[1])
+            else:
+                has_work = check_github_backlog(backlog_source[1], args.label)
+
+            if not has_work:
+                if check_interval_secs is None:
+                    print(f"=== Backlog empty ({datetime.now().strftime('%H:%M:%S')}) — stopping ===")
+                    break
+                else:
+                    wake = datetime.now() + timedelta(seconds=check_interval_secs)
+                    print(f"    Backlog empty — sleeping until {wake.strftime('%H:%M:%S')}")
+                    time.sleep(check_interval_secs)
+                    continue
+
+        session += 1
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "--short=6", "HEAD"], stderr=subprocess.DEVNULL
+            ).decode().strip()
+        except Exception:
+            commit = "no-git"
+
+        log_path = log_dir / f"{name}_{timestamp}_{commit}.log"
+        print(f"--- Session #{session} starting ({datetime.now().strftime('%H:%M:%S')}) ---")
+        print(f"    Log: {log_path}")
+
+        run_session(prompt_text, args.model, log_path)
+
+        print(f"    Session #{session} ended ({datetime.now().strftime('%H:%M:%S')})")
+        time.sleep(5)
+
+    print(f"\n=== agent-loop finished after {session} session(s) ===")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="agent-loop",
+        description="Spawn repeating Claude Code sessions against a Linear or GitHub Issues backlog.",
+    )
+    sub = parser.add_subparsers(dest="subcommand")
+
+    # init
+    sub.add_parser("init", help="Interview mode: generate scripts/agent-prompt.md for this project")
+
+    # run
+    run_p = sub.add_parser("run", help="Run the agent loop (default when no subcommand given)")
+    _add_run_args(run_p)
+
+    # Also add run args to the top-level parser so `agent-loop --prompt ...` works
+    _add_run_args(parser)
+
+    return parser
+
+
+def _add_run_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--prompt", metavar="PATH", help="Path to prompt markdown file (required for run)")
+    backlog = p.add_mutually_exclusive_group()
+    backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name")
+    backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
+    p.add_argument("--label", default="backlog", metavar="LABEL", help="GitHub Issues label filter (default: backlog)")
+    p.add_argument("--model", default="opus", metavar="MODEL", help="Claude model (default: opus)")
+    p.add_argument("--stop-at", metavar="HH:MM", help="Hard deadline; wraps to tomorrow if already past")
+    p.add_argument(
+        "--check-interval",
+        metavar="DURATION",
+        type=parse_duration,
+        help="Sleep between sessions when backlog empty, e.g. 30m, 1h (requires --stop-at)",
+    )
+    p.add_argument("--log-dir", metavar="DIR", help="Session log directory (default: ~/logs/agent-loop/<name>/)")
+    p.add_argument("--name", metavar="NAME", help="Name used in log filenames (default: prompt filename stem)")
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.subcommand == "init":
+        cmd_init(args)
+    elif args.subcommand == "run":
+        if not args.prompt:
+            parser.error("--prompt is required for the run subcommand")
+        cmd_run(args)
+    elif args.subcommand is None:
+        # No subcommand — treat as `run` if --prompt given, else print help
+        if args.prompt:
+            cmd_run(args)
+        else:
+            parser.print_help()
+            sys.exit(0)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

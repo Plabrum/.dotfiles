@@ -94,7 +94,7 @@ map("n", "<leader>yy", function()
 end, { desc = "Yank entire buffer to clipboard" })
 
 map("n", "<leader>yf", function()
-  local relpath = vim.fn.expand("%")
+  local relpath = vim.fn.expand("%:.")
   if relpath == "" then
     vim.notify("No file associated with this buffer", vim.log.levels.WARN)
     return
@@ -102,3 +102,10 @@ map("n", "<leader>yf", function()
   vim.fn.setreg("+", relpath)
   vim.notify("Yanked relative path: " .. relpath)
 end, { desc = "Yank relative file path to clipboard" })
+
+for _, m in ipairs({ "n", "i", "t" }) do
+  map(m, "<M-Left>", "<Nop>", { silent = true })
+  map(m, "<M-Right>", "<Nop>", { silent = true })
+  map(m, "<M-Up>", "<Nop>", { silent = true })
+  map(m, "<M-Down>", "<Nop>", { silent = true })
+end
