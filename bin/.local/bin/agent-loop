@@ -2,6 +2,7 @@
 """agent-loop — spawn repeating Claude Code sessions against a Linear or GitHub Issues backlog."""
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -148,17 +149,21 @@ def check_linear_backlog(project: str, state: str = "Backlog", exclude_label: st
         return True
 
 
-def check_github_backlog(repo: str, label: str) -> bool:
-    """Return True if there are open GitHub Issues matching the label."""
+def check_github_backlog(repo: str, label: str | None, milestone: str | None) -> bool:
+    """Return True if there are open GitHub Issues matching the filters."""
+    cmd = [
+        "gh", "issue", "list",
+        "--repo", repo,
+        "--state", "open",
+        "--json", "number",
+    ]
+    if label:
+        cmd += ["--label", label]
+    if milestone:
+        cmd += ["--milestone", milestone]
     try:
         result = subprocess.run(
-            [
-                "gh", "issue", "list",
-                "--repo", repo,
-                "--state", "open",
-                "--label", label,
-                "--json", "number",
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
@@ -166,7 +171,6 @@ def check_github_backlog(repo: str, label: str) -> bool:
         if result.returncode != 0:
             print(f"[agent-loop] Warning: gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
             return True  # fail open
-        import json
         issues = json.loads(result.stdout or "[]")
         return len(issues) > 0
     except Exception as e:
@@ -174,9 +178,109 @@ def check_github_backlog(repo: str, label: str) -> bool:
         return True
 
 
-def run_session(prompt_text: str, model: str, log_path: Path) -> None:
+def git_head_short() -> str:
+    """Return short HEAD SHA, or 'no-git' if not in a repo."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short=7", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return "no-git"
+
+
+def git_commits_between(a: str, b: str) -> list[tuple[str, str]]:
+    """Return [(short_sha, subject), ...] for commits in a..b. Empty on error or equal SHAs."""
+    if a == "no-git" or b == "no-git" or a == b:
+        return []
+    try:
+        out = subprocess.check_output(
+            ["git", "log", f"{a}..{b}", "--pretty=format:%h %s"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return []
+    if not out:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for line in out.split("\n"):
+        sha, _, subject = line.partition(" ")
+        pairs.append((sha, subject))
+    return pairs
+
+
+def peek_next_github_issue(repo: str, label: str | None, milestone: str | None) -> tuple[int, str] | None:
+    """Return (number, title) of the lowest-numbered open issue matching filters, or None."""
+    cmd = [
+        "gh", "issue", "list",
+        "--repo", repo,
+        "--state", "open",
+        "--json", "number,title",
+        "--limit", "100",
+    ]
+    if label:
+        cmd += ["--label", label]
+    if milestone:
+        cmd += ["--milestone", milestone]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            return None
+        issues = json.loads(result.stdout or "[]")
+        if not issues:
+            return None
+        issues.sort(key=lambda i: i["number"])
+        first = issues[0]
+        return (first["number"], first["title"])
+    except Exception:
+        return None
+
+
+def github_issue_state(repo: str, number: int) -> str | None:
+    """Return 'OPEN' / 'CLOSED', or None on failure."""
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", str(number), "--repo", repo, "--json", "state"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return None
+        return json.loads(result.stdout).get("state")
+    except Exception:
+        return None
+
+
+def tail_last_message(log_path: Path, max_chars: int = 240) -> str:
+    """Return the last non-blank paragraph from a session log, truncated."""
+    try:
+        text = log_path.read_text(errors="replace")
+    except Exception:
+        return ""
+    if not text.strip():
+        return ""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if not paragraphs:
+        return ""
+    last = re.sub(r"\s+", " ", paragraphs[-1])
+    if len(last) > max_chars:
+        return last[: max_chars - 1].rstrip() + "…"
+    return last
+
+
+def format_duration(secs: float) -> str:
+    """Format seconds as Hh MMm SSs / Mm SSs / Ss."""
+    s = int(round(secs))
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
+def run_session(prompt_text: str, model: str, log_path: Path) -> subprocess.CompletedProcess:
     with open(log_path, "w") as logfile:
-        subprocess.run(
+        return subprocess.run(
             ["claude", "--dangerously-skip-permissions", "-p", prompt_text, "--model", model],
             stdout=logfile,
             stderr=logfile,
@@ -219,7 +323,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if args.linear_project:
         backlog_source = ("linear", args.linear_project)
     elif args.github_repo:
-        backlog_source = ("github", args.github_repo, args.label)
+        backlog_source = ("github", args.github_repo, args.label, args.milestone)
 
     # Startup summary
     print("=== agent-loop ===")
@@ -234,7 +338,12 @@ def cmd_run(args: argparse.Namespace) -> None:
         if backlog_source[0] == "linear":
             print(f"    Backlog: Linear project '{backlog_source[1]}'")
         else:
-            print(f"    Backlog: GitHub {backlog_source[1]} label={args.label}")
+            bits = []
+            if args.label:
+                bits.append(f"label={args.label}")
+            if args.milestone:
+                bits.append(f"milestone={args.milestone!r}")
+            print(f"    Backlog: GitHub {backlog_source[1]} " + (" ".join(bits) or "(no filter)"))
     else:
         print("    Backlog: (no check — runs until deadline or Ctrl-C)")
     print()
@@ -252,7 +361,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             if backlog_source[0] == "linear":
                 has_work = check_linear_backlog(backlog_source[1], state=args.linear_state, exclude_label=args.linear_exclude_label, verbose=args.verbose)
             else:
-                has_work = check_github_backlog(backlog_source[1], args.label)
+                has_work = check_github_backlog(backlog_source[1], args.label, args.milestone)
 
             if not has_work:
                 if check_interval_secs is None:
@@ -265,21 +374,64 @@ def cmd_run(args: argparse.Namespace) -> None:
                     continue
 
         session += 1
+
+        # Pre-session: peek the ticket the agent is most likely to pick up.
+        ticket: tuple[int, str] | None = None
+        if backlog_source is not None and backlog_source[0] == "github":
+            ticket = peek_next_github_issue(backlog_source[1], args.label, args.milestone)
+
+        head_before = git_head_short()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        try:
-            commit = subprocess.check_output(
-                ["git", "rev-parse", "--short=6", "HEAD"], stderr=subprocess.DEVNULL
-            ).decode().strip()
-        except Exception:
-            commit = "no-git"
+        log_path = log_dir / f"{name}_{timestamp}_{head_before}.log"
 
-        log_path = log_dir / f"{name}_{timestamp}_{commit}.log"
-        print(f"--- Session #{session} starting ({datetime.now().strftime('%H:%M:%S')}) ---")
-        print(f"    Log: {log_path}")
+        print(f"--- Session #{session} ({datetime.now().strftime('%H:%M:%S')}) ---")
+        if ticket:
+            print(f"    Picked up: #{ticket[0]} {ticket[1]}")
+        elif backlog_source and backlog_source[0] == "linear":
+            print("    Picked up: (Linear ticket — see session log)")
+        print(f"    Log:       {log_path}")
 
-        run_session(prompt_text, args.model, log_path)
+        start = time.monotonic()
+        result = run_session(prompt_text, args.model, log_path)
+        duration = time.monotonic() - start
 
-        print(f"    Session #{session} ended ({datetime.now().strftime('%H:%M:%S')})")
+        head_after = git_head_short()
+        commits = git_commits_between(head_before, head_after)
+
+        # Failure: Claude itself crashed.
+        if result.returncode != 0:
+            print(f"    Result:    ✗ session crashed (exit code {result.returncode})")
+            tail = tail_last_message(log_path)
+            if tail:
+                print(f"    Last msg:  {tail}")
+            print(f"    Duration:  {format_duration(duration)}")
+            print(f"\n=== agent-loop stopping after session #{session} (Claude exited non-zero) ===")
+            break
+
+        # Failure: no commit landed. Every session is expected to land work; if it didn't,
+        # something needs human attention (dirty tree, permissions, ambiguous ticket, etc.).
+        if not commits:
+            print(f"    Result:    ✗ no progress (HEAD unchanged at {head_before})")
+            tail = tail_last_message(log_path)
+            if tail:
+                print(f"    Last msg:  {tail}")
+            print(f"    Duration:  {format_duration(duration)}")
+            print(f"\n=== agent-loop stopping after session #{session} (no commit landed — human attention needed) ===")
+            break
+
+        # Success.
+        commit_summary = ", ".join(f"{sha} {subject}" for sha, subject in commits[:3])
+        if len(commits) > 3:
+            commit_summary += f", +{len(commits) - 3} more"
+        print(f"    Result:    ✓ committed ({commit_summary})")
+
+        # Did the picked-up ticket actually get closed? Best-effort signal.
+        if ticket and backlog_source and backlog_source[0] == "github":
+            state = github_issue_state(backlog_source[1], ticket[0])
+            if state == "CLOSED":
+                print(f"               closed #{ticket[0]}")
+
+        print(f"    Duration:  {format_duration(duration)}")
         time.sleep(5)
 
     print(f"\n=== agent-loop finished after {session} session(s) ===")
@@ -316,7 +468,8 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
     backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
     p.add_argument("--linear-state", default="Backlog", metavar="STATE", help="Linear state name to check for work (default: Backlog)")
     p.add_argument("--linear-exclude-label", metavar="LABEL", help="Skip tickets that already have this label (e.g. enriched)")
-    p.add_argument("--label", default="backlog", metavar="LABEL", help="GitHub Issues label filter (default: backlog)")
+    p.add_argument("--label", default=None, metavar="LABEL", help="GitHub Issues label filter (optional)")
+    p.add_argument("--milestone", default=None, metavar="NAME", help="GitHub Issues milestone filter (optional)")
     p.add_argument("--model", default="opus", metavar="MODEL", help="Claude model (default: opus)")
     p.add_argument("--stop-at", metavar="HH:MM", help="Hard deadline; wraps to tomorrow if already past")
     p.add_argument(
