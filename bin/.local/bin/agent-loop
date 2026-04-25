@@ -184,7 +184,7 @@ def run_session(prompt_text: str, model: str, log_path: Path) -> None:
 def cmd_init(args: argparse.Namespace) -> None:
     print("[agent-loop] Starting init session — Claude will interview you and write scripts/agent-prompt.md")
     subprocess.run(
-        ["claude", "--dangerously-skip-permissions", "-p", INIT_META_PROMPT],
+        ["claude", "--dangerously-skip-permissions", INIT_META_PROMPT],
     )
 
 
