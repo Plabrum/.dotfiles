@@ -1,0 +1,51 @@
+git:
+  branchPrefix: pal/
+os:
+  edit: nvim --server $NVIM --remote-tab {{filename}}
+
+customCommands:
+  - key: "e"
+    description: "Graphite"
+    commandMenu:
+      - key: "s"
+        context: "localBranches"
+        description: "Submit Stack"
+        command: "gt submit --stack"
+        output: log
+        #   context: "localBranches"
+        #   description: "Submit PR"
+        #   command: "gt submit {{.SelectedLocalBranch.Name}}"
+        # - key: "S"
+      - key: "m"
+        context: localBranches
+        description: "Modify branch"
+        command: "gt modify {{.SelectedLocalBranch.Name}}"
+        output: log
+
+      - key: "c"
+        context: localBranches
+        description: "Continue (after modifiactio)"
+        command: "gt continue"
+        output: log
+
+      - key: "r"
+        context: "localBranches"
+        description: "Restack"
+        command: "gt restack"
+
+      - key: "c"
+        context: "localBranches"
+        description: "Create branch"
+        prompts:
+          - type: "input"
+            title: "What is the new branch name?"
+            key: "BranchName"
+            initialValue: "pal/"
+        command: "gt create {{.Form.BranchName}}"
+        output: log
+
+      - key: "t"
+        context: "localBranches"
+        command: "gt tr"
+        description: "Track current branch"
+        output: log
