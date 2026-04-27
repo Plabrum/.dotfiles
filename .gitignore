@@ -14,3 +14,4 @@ nvim/.config/nvim/.env
 **/.env
 ghostty/.config/ghostty/directory_config
 .claude/settings.local.json
+bin/.local/bin/__pycache__

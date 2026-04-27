@@ -8,8 +8,128 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Picker constants
+# ---------------------------------------------------------------------------
+
+DEFAULT_SKIP_LABELS = ["epic", "tracker"]
+DEFAULT_PRIORITY_LABELS = ["bug"]
+EPIC_TITLE_RE = re.compile(r"^Epic:\s", re.IGNORECASE)
+DEPENDENCY_RE = re.compile(r"\b(?:blocked by|depends on)\s+#(\d+)", re.IGNORECASE)
+PR_CLOSES_RE = re.compile(r"\b(?:closes|fixes|resolves)\s+#(\d+)\b", re.IGNORECASE)
+TICKET_MARKER = "{{TICKET}}"
+LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_PROMPTS_DIR = SCRIPT_DIR / "agent-prompts"
+AVAILABLE_ROLES = ["engineer", "qa"]
+
+# Per-role allowlists passed to `claude --allowedTools`. Anything not listed
+# will prompt at runtime — and since these run headless via `claude -p`, a
+# prompt = a hang. So the allowlist must cover everything the role legitimately
+# does, and intentionally omit destructive surfaces (force-push, hard reset,
+# repo/issue delete, deploy/submit/release, db reset --linked, rm -rf, .env
+# edits) so they fail loudly instead of executing silently.
+#
+# Custom prompts (--prompt without --role) fall back to
+# --dangerously-skip-permissions for backward compatibility.
+ROLE_ALLOWED_TOOLS = {
+    "qa": [
+        # GitHub backlog — read + file bugs. No close/edit/delete.
+        "Bash(gh issue list:*)",
+        "Bash(gh issue view:*)",
+        "Bash(gh issue create:*)",
+        "Bash(gh issue comment:*)",
+        # Linear — read + comment. No state changes from QA.
+        "mcp__claude_ai_Linear__list_issues",
+        "mcp__claude_ai_Linear__get_issue",
+        "mcp__claude_ai_Linear__list_comments",
+        "mcp__claude_ai_Linear__save_comment",
+        "mcp__claude_ai_Linear__get_team",
+        "mcp__claude_ai_Linear__list_issue_labels",
+        # Read-only git for orientation.
+        "Bash(git status)",
+        "Bash(git status:*)",
+        "Bash(git log:*)",
+        "Bash(git diff:*)",
+        "Bash(git rev-parse:*)",
+        "Bash(git branch --show-current)",
+        # Dev stack bring-up + diagnostics.
+        "Bash(npm run supabase:start)",
+        "Bash(npm run supabase:stop)",
+        "Bash(bash scripts/dev-sim.sh)",
+        "Bash(bash scripts/db-fixtures.sh)",
+        "Bash(bash scripts/db-reset.sh)",
+        "Bash(nohup bash scripts/dev-sim.sh*)",
+        "Bash(curl:*)",
+        "Bash(tail:*)",
+        "Bash(sleep:*)",
+        "Bash(psql postgresql://postgres:postgres@127.0.0.1:54322/*)",
+        "Bash(npx tsx:*)",
+        # Simulator MCP — full surface; the skill governs usage.
+        "mcp__XcodeBuildMCP__*",
+        # Scratchpad + repo reads.
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+    ],
+    "engineer": [
+        # Git workflow — commit + push to feature branches. No force-push, no hard reset.
+        "Bash(git status)",
+        "Bash(git status:*)",
+        "Bash(git log:*)",
+        "Bash(git diff:*)",
+        "Bash(git add:*)",
+        "Bash(git commit:*)",
+        "Bash(git push)",
+        "Bash(git push -u origin:*)",
+        "Bash(git push origin:*)",
+        "Bash(git checkout:*)",
+        "Bash(git switch:*)",
+        "Bash(git branch:*)",
+        "Bash(git rev-parse:*)",
+        "Bash(git stash:*)",
+        "Bash(git fetch:*)",
+        "Bash(git pull --ff-only:*)",
+        "Bash(git restore:*)",
+        # GitHub PRs + issue lifecycle.
+        "Bash(gh pr create:*)",
+        "Bash(gh pr view:*)",
+        "Bash(gh pr edit:*)",
+        "Bash(gh pr comment:*)",
+        "Bash(gh pr checks:*)",
+        "Bash(gh issue list:*)",
+        "Bash(gh issue view:*)",
+        "Bash(gh issue close:*)",
+        "Bash(gh issue comment:*)",
+        "Bash(gh repo view:*)",
+        # Linear — full read/write for state transitions.
+        "mcp__claude_ai_Linear__*",
+        # Build / test / codegen.
+        "Bash(npm run:*)",
+        "Bash(npx:*)",
+        "Bash(node:*)",
+        "Bash(deno:*)",
+        "Bash(bash scripts/*)",
+        "Bash(rg:*)",
+        "Bash(find:*)",
+        "Bash(ls:*)",
+        "Bash(cat:*)",
+        # Code edits.
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Embedded meta-prompt for `agent-loop init`
@@ -69,9 +189,14 @@ One sentence: what this agent builds and why.
 Exact read steps the agent should do at session start to understand the current state of the codebase.
 No PROGRESS.md or session-continuity files — the issue tracker is the only state.
 
-### Pick a ticket
-Concrete rules derived from Q2 and Q3. Include the exact Linear MCP call or gh CLI command.
-Priority ordering, tie-breaking, dependency-skipping rules if any.
+### {{TICKET}}
+This is a literal placeholder. Write the four braces verbatim, on their own line, with no surrounding text.
+agent-loop pre-picks the ticket using its --skip-label / --prioritize-label / --skip-deps flags
+and substitutes the rendered ticket block (source, title, labels, body, AND close instructions)
+here before passing the prompt to Claude. Do NOT include any `gh issue list` or Linear MCP picking
+instructions; the prompt does not run a picker.
+
+If Q2 was "neither" (no backlog), omit this section entirely — the loop will run the prompt as-is.
 
 ### Implement
 Numbered steps. Include the exact shell commands from Q7 woven into the workflow at the right points.
@@ -81,7 +206,9 @@ Reference where patterns live (e.g. "follow the pattern in backend/models/").
 The exact commands from Q4, in order. What a passing result looks like. What to do if a check fails.
 
 ### Close the ticket
-The exact steps from Q5. Every action, in order, with the precise commands or MCP calls.
+Do NOT spell out commit / push / `gh issue close` / `gh pr create` here — the {{TICKET}} block
+above already renders the exact commands for the active --close-mode (commit-on-branch vs
+feature-branch + PR). This section should just say "follow the **To close** block above and stop."
 
 ### Rules
 Bullet list of hard constraints from Q8, plus: "Work one ticket per session. Stop after closing it."
@@ -123,59 +250,221 @@ def past_deadline(deadline: datetime | None) -> bool:
     return deadline is not None and datetime.now() >= deadline
 
 
-def check_linear_backlog(project: str, state: str = "Backlog", exclude_label: str | None = None, verbose: bool = False) -> bool:
-    """Return True if the Linear backlog has tickets. Uses Claude + MCP."""
-    exclude_clause = f' that do NOT have the label "{exclude_label}"' if exclude_label else ""
-    prompt = (
-        f'Use the Linear MCP to list issues in the "{project}" project that are in '
-        f'"{state}" state{exclude_clause}. '
-        "Reply ONLY with EMPTY if there are zero such issues, or ONLY with HAS_TICKETS if there are one or more. Nothing else."
-    )
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "-p", prompt, "--model", "haiku"],
-            capture_output=True,
-            text=True,
-            timeout=60,
+def _linear_graphql(query: str, variables: dict | None = None) -> dict:
+    """POST a GraphQL query to Linear. Raises on missing key, transport, or GraphQL errors."""
+    api_key = os.environ.get("LINEAR_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "LINEAR_API_KEY is not set. agent-loop's Linear picker reads issues directly via "
+            "the Linear GraphQL API (no MCP / haiku subprocess). Export your personal API key "
+            "from https://linear.app/settings/api and re-run."
         )
-        output = result.stdout.strip()
-        if verbose or not output:
-            print(f"    [linear check] raw: {repr(output)}")
-            if result.stderr.strip():
-                print(f"    [linear check] stderr: {result.stderr.strip()[:300]}")
-        return "HAS_TICKETS" in output
+    payload = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
+    req = urllib.request.Request(
+        LINEAR_GRAPHQL_URL,
+        data=payload,
+        headers={
+            "Authorization": api_key,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    if body.get("errors"):
+        raise RuntimeError(f"Linear GraphQL errors: {body['errors']}")
+    return body.get("data") or {}
+
+
+_LINEAR_LIST_QUERY = """
+query AgentLoopList($project: String!, $state: String!) {
+  issues(
+    first: 100
+    filter: {
+      project: { name: { eq: $project } }
+      state: { name: { eq: $state } }
+    }
+    orderBy: createdAt
+  ) {
+    nodes {
+      id
+      identifier
+      title
+      description
+      createdAt
+      labels { nodes { name } }
+    }
+  }
+}
+"""
+
+
+_LINEAR_STATE_QUERY = """
+query AgentLoopState($id: String!) {
+  issue(id: $id) {
+    state { name type }
+  }
+}
+"""
+
+
+def pick_linear_ticket(
+    project: str,
+    state: str,
+    skip_labels: list[str],
+    priority_labels: list[str],
+    skip_deps: bool,
+) -> dict | None:
+    """Pick the next Linear ticket to work on.
+
+    Returns a dict shaped {'kind': 'linear', 'identifier': str, 'id': str, 'title': str,
+    'body': str, 'labels': [str], 'project': str} or None when nothing matches.
+    """
+    try:
+        data = _linear_graphql(_LINEAR_LIST_QUERY, {"project": project, "state": state})
     except Exception as e:
-        print(f"[agent-loop] Warning: Linear check failed: {e}", file=sys.stderr)
-        return True
+        print(f"[agent-loop] Error: Linear list failed: {e}", file=sys.stderr)
+        return None
+    nodes = (data.get("issues") or {}).get("nodes") or []
+
+    skip = {s.lower() for s in skip_labels}
+    prio = {p.lower() for p in priority_labels}
+
+    # For Linear, "blocked by / depends on" can reference identifiers like ENG-123,
+    # but agent-loop doesn't fetch the relations graph. Use a conservative literal-match
+    # against the descriptions of the same listing — same semantics as GitHub but on
+    # identifier strings. Issues in any "open" state remain candidates.
+    open_idents = {n["identifier"] for n in nodes}
+
+    def _linear_has_dep(desc: str) -> bool:
+        if not desc:
+            return False
+        for m in re.finditer(r"\b(?:blocked by|depends on)\s+([A-Z]+-\d+)", desc, re.IGNORECASE):
+            if m.group(1).upper() in open_idents:
+                return True
+        return False
+
+    eligible: list[dict] = []
+    for n in nodes:
+        labels = [l["name"] for l in (n.get("labels") or {}).get("nodes", [])]
+        label_set = {l.lower() for l in labels}
+        if label_set & skip:
+            continue
+        if EPIC_TITLE_RE.search(n.get("title") or ""):
+            continue
+        if skip_deps and _linear_has_dep(n.get("description") or ""):
+            continue
+        eligible.append({
+            "kind": "linear",
+            "identifier": n["identifier"],
+            "id": n["id"],
+            "title": n.get("title") or "",
+            "body": n.get("description") or "",
+            "labels": labels,
+            "project": project,
+            "_created": n.get("createdAt") or "",
+            "_label_set": label_set,
+        })
+
+    if not eligible:
+        return None
+
+    eligible.sort(key=lambda t: (0 if t["_label_set"] & prio else 1, t["_created"]))
+    chosen = eligible[0]
+    chosen.pop("_label_set", None)
+    chosen.pop("_created", None)
+    return chosen
 
 
-def check_github_backlog(repo: str, label: str | None, milestone: str | None) -> bool:
-    """Return True if there are open GitHub Issues matching the filters."""
+def linear_issue_state(issue_id: str) -> str | None:
+    """Return the issue's state type (e.g. 'completed', 'started') or None on failure."""
+    try:
+        data = _linear_graphql(_LINEAR_STATE_QUERY, {"id": issue_id})
+    except Exception:
+        return None
+    issue = data.get("issue") or {}
+    state = issue.get("state") or {}
+    return state.get("type")
+
+
+def _has_dependency(body: str, open_numbers: set[int]) -> bool:
+    """Return True if the body references an open issue via 'blocked by #N' / 'depends on #N'."""
+    return any(int(m) in open_numbers for m in DEPENDENCY_RE.findall(body or ""))
+
+
+def pick_github_ticket(
+    repo: str,
+    label: str | None,
+    milestone: str | None,
+    skip_labels: list[str],
+    priority_labels: list[str],
+    skip_deps: bool,
+    close_mode: str = "commit",
+) -> dict | None:
+    """Pick the next GitHub ticket to work on.
+
+    When close_mode == "pr", drop issues already referenced by an open PR via
+    Closes/Fixes/Resolves #N — otherwise the loop would re-pick the same issue
+    every iteration while the PR sits open waiting for merge.
+
+    Returns a dict shaped {'kind': 'github', 'number': int, 'title': str, 'body': str,
+    'labels': [str], 'repo': str} or None when nothing matches.
+    """
     cmd = [
         "gh", "issue", "list",
         "--repo", repo,
         "--state", "open",
-        "--json", "number",
+        "--json", "number,title,body,labels",
+        "--limit", "100",
     ]
     if label:
         cmd += ["--label", label]
     if milestone:
         cmd += ["--milestone", milestone]
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            print(f"[agent-loop] Warning: gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
-            return True  # fail open
-        issues = json.loads(result.stdout or "[]")
-        return len(issues) > 0
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except Exception as e:
-        print(f"[agent-loop] Warning: GitHub check failed: {e}", file=sys.stderr)
-        return True
+        print(f"[agent-loop] Error: gh issue list failed: {e}", file=sys.stderr)
+        return None
+    if result.returncode != 0:
+        print(f"[agent-loop] Error: gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
+        return None
+    issues = json.loads(result.stdout or "[]")
+
+    skip = {s.lower() for s in skip_labels}
+    prio = {p.lower() for p in priority_labels}
+    open_numbers = {i["number"] for i in issues}
+    pr_referenced = github_issues_with_open_prs(repo) if close_mode == "pr" else set()
+
+    eligible: list[dict] = []
+    for i in issues:
+        labels = [l["name"] for l in i.get("labels", [])]
+        label_set = {l.lower() for l in labels}
+        if label_set & skip:
+            continue
+        if EPIC_TITLE_RE.search(i.get("title") or ""):
+            continue
+        if skip_deps and _has_dependency(i.get("body") or "", open_numbers):
+            continue
+        if i["number"] in pr_referenced:
+            continue
+        eligible.append({
+            "kind": "github",
+            "number": i["number"],
+            "title": i.get("title") or "",
+            "body": i.get("body") or "",
+            "labels": labels,
+            "repo": repo,
+            "_label_set": label_set,
+        })
+
+    if not eligible:
+        return None
+
+    eligible.sort(key=lambda t: (0 if t["_label_set"] & prio else 1, t["number"]))
+    chosen = eligible[0]
+    chosen.pop("_label_set", None)
+    return chosen
 
 
 def git_head_short() -> str:
@@ -208,31 +497,172 @@ def git_commits_between(a: str, b: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def peek_next_github_issue(repo: str, label: str | None, milestone: str | None) -> tuple[int, str] | None:
-    """Return (number, title) of the lowest-numbered open issue matching filters, or None."""
-    cmd = [
-        "gh", "issue", "list",
-        "--repo", repo,
-        "--state", "open",
-        "--json", "number,title",
-        "--limit", "100",
-    ]
-    if label:
-        cmd += ["--label", label]
-    if milestone:
-        cmd += ["--milestone", milestone]
+def _branch_name(ticket: dict, pattern: str) -> str:
+    """Render the feature-branch name from --branch-pattern."""
+    if ticket["kind"] == "github":
+        kind = "gh"
+        ident = str(ticket["number"])
+    else:
+        kind = "lin"
+        ident = ticket["identifier"].lower()
+    return pattern.format(kind=kind, id=ident, slug=slugify(ticket["title"]))
+
+
+def _ticket_ref(ticket: dict) -> str:
+    """How the ticket is referenced in commit trailers / PR bodies (#N or ENG-123)."""
+    return f"#{ticket['number']}" if ticket["kind"] == "github" else ticket["identifier"]
+
+
+def render_ticket_block(
+    ticket: dict,
+    branch: str,
+    close_mode: str = "commit",
+    pr_base: str | None = None,
+    branch_pattern: str = "agent/{kind}-{id}-{slug}",
+) -> str:
+    """Render the `## Ticket` block that replaces {{TICKET}} in the prompt."""
+    labels = ", ".join(ticket.get("labels") or []) or "(none)"
+    body = (ticket.get("body") or "").strip() or "_(no body)_"
+    ref = _ticket_ref(ticket)
+
+    if ticket["kind"] == "github":
+        source = f"GitHub `{ticket['repo']}` issue #{ticket['number']}"
+    else:
+        source = f"Linear project `{ticket['project']}`, issue `{ticket['identifier']}` (id `{ticket['id']}`)"
+
+    header = (
+        "## Ticket\n\n"
+        f"**Source:** {source}\n"
+        f"**Title:** {ticket['title']}\n"
+        f"**Labels:** {labels}\n\n"
+        "### Body\n\n"
+        f"{body}\n\n"
+    )
+
+    if close_mode == "commit":
+        if ticket["kind"] == "github":
+            n = ticket["number"]
+            repo = ticket["repo"]
+            close = (
+                "### To close\n\n"
+                "After committing and pushing on the current branch, run:\n\n"
+                "```\n"
+                "SHA=$(git rev-parse --short HEAD)\n"
+                f"gh issue close {n} --repo {repo} --comment \"Landed on \\`{branch}\\` in $SHA.\"\n"
+                "```\n"
+            )
+        else:
+            ident = ticket["identifier"]
+            close = (
+                "### To close\n\n"
+                f"After committing and pushing, use the Linear MCP to move issue `{ident}` to a "
+                f"\"Done\" state and post a comment: \"Landed on `{branch}` in <short SHA>.\"\n"
+            )
+        return header + close
+
+    if close_mode == "pr":
+        feature_branch = _branch_name(ticket, branch_pattern)
+        base = pr_base or "main"
+        if ticket["kind"] == "github":
+            repo = ticket["repo"]
+            close = (
+                "### To close\n\n"
+                f"Cut a feature branch off `{base}`, commit, push, open a PR. The `Closes {ref}` "
+                "trailer auto-closes the issue on merge — do NOT close the issue manually.\n\n"
+                "```\n"
+                f"git checkout -b {feature_branch}\n"
+                "git add -A\n"
+                f"git commit -m \"<prefix>: <subject> ({ref})\n"
+                "\n"
+                "<one-paragraph why / what changed>\n"
+                "\n"
+                f"Closes {ref}\n"
+                "\n"
+                "Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\"\n"
+                f"git push -u origin {feature_branch}\n"
+                f"gh pr create --repo {repo} --base {base} --head {feature_branch} \\\n"
+                f"  --title \"<prefix>: <subject> ({ref})\" \\\n"
+                f"  --body \"Closes {ref}\"\n"
+                "```\n"
+            )
+        else:
+            close = (
+                "### To close\n\n"
+                f"Cut a feature branch off `{base}`, commit, push, open a PR. The Linear-GitHub "
+                f"integration moves `{ref}` to \"In Review\" on PR open and to \"Done\" on merge — "
+                "do NOT change the Linear state manually.\n\n"
+                "```\n"
+                f"git checkout -b {feature_branch}\n"
+                "git add -A\n"
+                f"git commit -m \"<prefix>: <subject> ({ref})\n"
+                "\n"
+                "<one-paragraph why / what changed>\n"
+                "\n"
+                f"Closes {ref}\n"
+                "\n"
+                "Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\"\n"
+                f"git push -u origin {feature_branch}\n"
+                f"gh pr create --base {base} --head {feature_branch} \\\n"
+                f"  --title \"<prefix>: <subject> ({ref})\" \\\n"
+                f"  --body \"Closes {ref}\"\n"
+                "```\n"
+            )
+        return header + close
+
+    raise ValueError(f"Unknown close_mode: {close_mode!r}")
+
+
+def current_branch() -> str:
+    """Return the current git branch, or '(detached)' on error."""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            return None
-        issues = json.loads(result.stdout or "[]")
-        if not issues:
-            return None
-        issues.sort(key=lambda i: i["number"])
-        first = issues[0]
-        return (first["number"], first["title"])
+        return subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip() or "(detached)"
+    except Exception:
+        return "(detached)"
+
+
+def slugify(title: str, max_words: int = 5) -> str:
+    """Lowercase, non-alnum → '-', collapse, take the first N words."""
+    words = re.findall(r"[A-Za-z0-9]+", title.lower())
+    return "-".join(words[:max_words]) or "ticket"
+
+
+def github_default_branch(repo: str) -> str | None:
+    """Return the repo's default branch (e.g. 'main') via gh, or None on failure."""
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
     except Exception:
         return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def github_issues_with_open_prs(repo: str) -> set[int]:
+    """Return the set of issue numbers referenced by any open PR via Closes/Fixes/Resolves #N."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "list", "--repo", repo, "--state", "open", "--json", "body", "--limit", "200"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return set()
+    if result.returncode != 0:
+        return set()
+    prs = json.loads(result.stdout or "[]")
+    nums: set[int] = set()
+    for pr in prs:
+        for m in PR_CLOSES_RE.findall(pr.get("body") or ""):
+            nums.add(int(m))
+    return nums
 
 
 def github_issue_state(repo: str, number: int) -> str | None:
@@ -278,13 +708,22 @@ def format_duration(secs: float) -> str:
     return f"{s}s"
 
 
-def run_session(prompt_text: str, model: str, log_path: Path) -> subprocess.CompletedProcess:
+def run_session(
+    prompt_text: str,
+    model: str,
+    log_path: Path,
+    role: str | None,
+) -> subprocess.CompletedProcess:
+    cmd = ["claude", "-p", prompt_text, "--model", model]
+    allowed = ROLE_ALLOWED_TOOLS.get(role) if role else None
+    if allowed:
+        for tool in allowed:
+            cmd.extend(["--allowedTools", tool])
+    else:
+        # Custom prompts (no role) keep the old unrestricted behavior.
+        cmd.insert(1, "--dangerously-skip-permissions")
     with open(log_path, "w") as logfile:
-        return subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "-p", prompt_text, "--model", model],
-            stdout=logfile,
-            stderr=logfile,
-        )
+        return subprocess.run(cmd, stdout=logfile, stderr=logfile)
 
 
 # ---------------------------------------------------------------------------
@@ -300,52 +739,129 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     # Validation
-    if args.check_interval is not None and args.stop_at is None:
-        print("Error: --check-interval requires --stop-at", file=sys.stderr)
+    if args.check_interval is not None and args.stop_at is None and args.stop_after is None:
+        print("Error: --check-interval requires --stop-at or --stop-after", file=sys.stderr)
         sys.exit(1)
 
-    prompt_path = Path(args.prompt).expanduser().resolve()
+    # Resolve prompt: --prompt wins; otherwise --role looks up a colocated default.
+    if args.prompt:
+        prompt_path = Path(args.prompt).expanduser().resolve()
+    elif args.role:
+        prompt_path = (DEFAULT_PROMPTS_DIR / f"{args.role}.md").resolve()
+    else:
+        print("Error: pass --prompt <path> or --role {" + "|".join(AVAILABLE_ROLES) + "}.", file=sys.stderr)
+        sys.exit(1)
     if not prompt_path.exists():
         print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
         sys.exit(1)
     prompt_text = prompt_path.read_text()
 
-    # Derive name and log dir
-    name = args.name or prompt_path.stem
-    log_dir = Path(args.log_dir or f"~/logs/agent-loop/{name}").expanduser().resolve()
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    deadline = parse_stop_at(args.stop_at) if args.stop_at else None
-    check_interval_secs = args.check_interval  # already int seconds or None
+    # Resolve picker config (CLI overrides; otherwise defaults).
+    skip_labels = _split_label_csv(args.skip_label)
+    if skip_labels is None:
+        skip_labels = list(DEFAULT_SKIP_LABELS)
+    priority_labels = _split_label_csv(args.prioritize_label)
+    if priority_labels is None:
+        priority_labels = list(DEFAULT_PRIORITY_LABELS)
 
     # Determine backlog source
     backlog_source = None
     if args.linear_project:
         backlog_source = ("linear", args.linear_project)
     elif args.github_repo:
-        backlog_source = ("github", args.github_repo, args.label, args.milestone)
+        backlog_source = ("github", args.github_repo)
+
+    # Marker is only required when a backlog source is configured (ticket-driven loop).
+    # No backlog source = QA-style loop where the prompt runs as-is each iteration.
+    if backlog_source is not None and TICKET_MARKER not in prompt_text:
+        print(
+            f"Error: prompt {prompt_path} is missing the {TICKET_MARKER} placeholder.\n"
+            f"When a backlog source is configured, agent-loop pre-picks the ticket and "
+            f"substitutes it at {TICKET_MARKER}. Drop the 'Pick a ticket' section from "
+            f"the prompt and add `{TICKET_MARKER}` where the rendered ticket block should appear.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    def _pick() -> dict | None:
+        if backlog_source is None:
+            return None
+        if backlog_source[0] == "linear":
+            return pick_linear_ticket(
+                backlog_source[1],
+                args.linear_state,
+                skip_labels,
+                priority_labels,
+                args.skip_deps,
+            )
+        return pick_github_ticket(
+            backlog_source[1],
+            args.label,
+            args.milestone,
+            skip_labels,
+            priority_labels,
+            args.skip_deps,
+            close_mode=args.close_mode,
+        )
+
+    branch = current_branch()
+
+    # Resolve PR base if --close-mode=pr and no override.
+    pr_base = args.pr_base
+    if args.close_mode == "pr" and pr_base is None and backlog_source and backlog_source[0] == "github":
+        pr_base = github_default_branch(backlog_source[1]) or "main"
+    elif args.close_mode == "pr" and pr_base is None:
+        pr_base = "main"
+
+    # Dry-run: pick a ticket, print the rendered block, exit. No Claude spawn.
+    if args.print_ticket:
+        if backlog_source is None:
+            print("Error: --print-ticket requires --github-repo or --linear-project.", file=sys.stderr)
+            sys.exit(2)
+        ticket = _pick()
+        if ticket is None:
+            print("(no matching ticket)")
+            sys.exit(0)
+        print(render_ticket_block(ticket, branch, args.close_mode, pr_base, args.branch_pattern))
+        sys.exit(0)
+
+    # Derive name and log dir
+    name = args.name or prompt_path.stem
+    log_dir = Path(args.log_dir or f"~/logs/agent-loop/{name}").expanduser().resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.stop_at:
+        deadline = parse_stop_at(args.stop_at)
+    elif args.stop_after is not None:
+        deadline = datetime.now() + timedelta(seconds=args.stop_after)
+    else:
+        deadline = None
+    check_interval_secs = args.check_interval  # already int seconds or None
 
     # Startup summary
     print("=== agent-loop ===")
     print(f"    Prompt:  {prompt_path}")
     print(f"    Model:   {args.model}")
     print(f"    Logs:    {log_dir}")
+    print(f"    Branch:  {branch}")
     if deadline:
         print(f"    Stop at: {deadline.strftime('%Y-%m-%d %H:%M')}")
     else:
         print("    Stop at: (none)")
-    if backlog_source:
-        if backlog_source[0] == "linear":
-            print(f"    Backlog: Linear project '{backlog_source[1]}'")
-        else:
-            bits = []
-            if args.label:
-                bits.append(f"label={args.label}")
-            if args.milestone:
-                bits.append(f"milestone={args.milestone!r}")
-            print(f"    Backlog: GitHub {backlog_source[1]} " + (" ".join(bits) or "(no filter)"))
+    if backlog_source is None:
+        print("    Backlog: (no source — runs prompt as-is each iteration)")
+    elif backlog_source[0] == "linear":
+        print(f"    Backlog: Linear project '{backlog_source[1]}' state={args.linear_state}")
     else:
-        print("    Backlog: (no check — runs until deadline or Ctrl-C)")
+        bits = []
+        if args.label:
+            bits.append(f"label={args.label}")
+        if args.milestone:
+            bits.append(f"milestone={args.milestone!r}")
+        print(f"    Backlog: GitHub {backlog_source[1]} " + (" ".join(bits) or "(no filter)"))
+    if backlog_source is not None:
+        print(f"    Pick:    skip={','.join(skip_labels) or '(none)'} priority={','.join(priority_labels) or '(none)'} skip_deps={args.skip_deps}")
+        print(f"    Close:   mode={args.close_mode}" + (f" pr_base={pr_base}" if args.close_mode == "pr" else ""))
     print()
 
     session = 0
@@ -355,44 +871,45 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"=== Deadline reached ({datetime.now().strftime('%H:%M:%S')}) — stopping ===")
             break
 
-        # Check backlog if a source is configured
+        ticket: dict | None = None
         if backlog_source is not None:
-            print(f"--- Checking backlog ({datetime.now().strftime('%H:%M:%S')}) ---")
-            if backlog_source[0] == "linear":
-                has_work = check_linear_backlog(backlog_source[1], state=args.linear_state, exclude_label=args.linear_exclude_label, verbose=args.verbose)
-            else:
-                has_work = check_github_backlog(backlog_source[1], args.label, args.milestone)
+            print(f"--- Picking ticket ({datetime.now().strftime('%H:%M:%S')}) ---")
+            ticket = _pick()
 
-            if not has_work:
+            if ticket is None:
                 if check_interval_secs is None:
-                    print(f"=== Backlog empty ({datetime.now().strftime('%H:%M:%S')}) — stopping ===")
+                    print(f"=== No matching ticket ({datetime.now().strftime('%H:%M:%S')}) — stopping ===")
                     break
-                else:
-                    wake = datetime.now() + timedelta(seconds=check_interval_secs)
-                    print(f"    Backlog empty — sleeping until {wake.strftime('%H:%M:%S')}")
-                    time.sleep(check_interval_secs)
-                    continue
+                wake = datetime.now() + timedelta(seconds=check_interval_secs)
+                print(f"    No matching ticket — sleeping until {wake.strftime('%H:%M:%S')}")
+                time.sleep(check_interval_secs)
+                continue
 
         session += 1
-
-        # Pre-session: peek the ticket the agent is most likely to pick up.
-        ticket: tuple[int, str] | None = None
-        if backlog_source is not None and backlog_source[0] == "github":
-            ticket = peek_next_github_issue(backlog_source[1], args.label, args.milestone)
 
         head_before = git_head_short()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_path = log_dir / f"{name}_{timestamp}_{head_before}.log"
 
         print(f"--- Session #{session} ({datetime.now().strftime('%H:%M:%S')}) ---")
-        if ticket:
-            print(f"    Picked up: #{ticket[0]} {ticket[1]}")
-        elif backlog_source and backlog_source[0] == "linear":
-            print("    Picked up: (Linear ticket — see session log)")
+        if ticket is None:
+            print("    Picked up: (no ticket — running prompt as-is)")
+        elif ticket["kind"] == "github":
+            print(f"    Picked up: #{ticket['number']} {ticket['title']}")
+        else:
+            print(f"    Picked up: {ticket['identifier']} {ticket['title']}")
         print(f"    Log:       {log_path}")
 
+        if ticket is None:
+            session_prompt = prompt_text
+        else:
+            session_prompt = prompt_text.replace(
+                TICKET_MARKER,
+                render_ticket_block(ticket, branch, args.close_mode, pr_base, args.branch_pattern),
+            )
+
         start = time.monotonic()
-        result = run_session(prompt_text, args.model, log_path)
+        result = run_session(session_prompt, args.model, log_path, args.role)
         duration = time.monotonic() - start
 
         head_after = git_head_short()
@@ -408,16 +925,22 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"\n=== agent-loop stopping after session #{session} (Claude exited non-zero) ===")
             break
 
-        # Failure: no commit landed. Every session is expected to land work; if it didn't,
-        # something needs human attention (dirty tree, permissions, ambiguous ticket, etc.).
+        # No-op: session ran cleanly but landed no commit. Could mean the picked ticket was
+        # genuinely undoable and the session commented + exited — not an error. Sleep and
+        # try again later if a check-interval was given; otherwise stop.
         if not commits:
-            print(f"    Result:    ✗ no progress (HEAD unchanged at {head_before})")
+            print(f"    Result:    — no progress (HEAD unchanged at {head_before})")
             tail = tail_last_message(log_path)
             if tail:
                 print(f"    Last msg:  {tail}")
             print(f"    Duration:  {format_duration(duration)}")
-            print(f"\n=== agent-loop stopping after session #{session} (no commit landed — human attention needed) ===")
-            break
+            if check_interval_secs is None:
+                print(f"\n=== agent-loop stopping after session #{session} (no commit landed and no --check-interval) ===")
+                break
+            wake = datetime.now() + timedelta(seconds=check_interval_secs)
+            print(f"    No-op — sleeping until {wake.strftime('%H:%M:%S')}")
+            time.sleep(check_interval_secs)
+            continue
 
         # Success.
         commit_summary = ", ".join(f"{sha} {subject}" for sha, subject in commits[:3])
@@ -426,13 +949,24 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"    Result:    ✓ committed ({commit_summary})")
 
         # Did the picked-up ticket actually get closed? Best-effort signal.
-        if ticket and backlog_source and backlog_source[0] == "github":
-            state = github_issue_state(backlog_source[1], ticket[0])
+        if ticket is None:
+            pass
+        elif ticket["kind"] == "github":
+            state = github_issue_state(ticket["repo"], ticket["number"])
             if state == "CLOSED":
-                print(f"               closed #{ticket[0]}")
+                print(f"               closed #{ticket['number']}")
+        else:
+            state = linear_issue_state(ticket["id"])
+            if state == "completed":
+                print(f"               closed {ticket['identifier']}")
 
         print(f"    Duration:  {format_duration(duration)}")
-        time.sleep(5)
+        if check_interval_secs is not None:
+            wake = datetime.now() + timedelta(seconds=check_interval_secs)
+            print(f"    Sleeping until {wake.strftime('%H:%M:%S')}")
+            time.sleep(check_interval_secs)
+        else:
+            time.sleep(5)
 
     print(f"\n=== agent-loop finished after {session} session(s) ===")
 
@@ -461,26 +995,86 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _split_label_csv(values: list[str] | None) -> list[str] | None:
+    """Flatten repeated --skip-label/--prioritize-label flags + comma-split each entry."""
+    if values is None:
+        return None
+    out: list[str] = []
+    for v in values:
+        for part in v.split(","):
+            part = part.strip()
+            if part:
+                out.append(part)
+    return out
+
+
 def _add_run_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--prompt", metavar="PATH", help="Path to prompt markdown file (required for run)")
+    p.add_argument(
+        "--role",
+        choices=AVAILABLE_ROLES,
+        help=f"Resolve to a colocated default prompt at {DEFAULT_PROMPTS_DIR}/<role>.md. --prompt overrides if given.",
+    )
+    p.add_argument("--prompt", metavar="PATH", help="Path to prompt markdown file. Wins over --role. Must contain the {{TICKET}} placeholder when a backlog source is configured.")
     backlog = p.add_mutually_exclusive_group()
-    backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name")
+    backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name (uses LINEAR_API_KEY env var)")
     backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
     p.add_argument("--linear-state", default="Backlog", metavar="STATE", help="Linear state name to check for work (default: Backlog)")
-    p.add_argument("--linear-exclude-label", metavar="LABEL", help="Skip tickets that already have this label (e.g. enriched)")
-    p.add_argument("--label", default=None, metavar="LABEL", help="GitHub Issues label filter (optional)")
+    p.add_argument("--label", default=None, metavar="LABEL", help="GitHub Issues label filter passed to gh issue list (optional)")
     p.add_argument("--milestone", default=None, metavar="NAME", help="GitHub Issues milestone filter (optional)")
+    p.add_argument(
+        "--skip-label",
+        action="append",
+        default=None,
+        metavar="LABEL",
+        help=f"Drop issues with these labels. Repeatable; comma-split. Default: {','.join(DEFAULT_SKIP_LABELS)}.",
+    )
+    p.add_argument(
+        "--prioritize-label",
+        action="append",
+        default=None,
+        metavar="LABEL",
+        help=f"Pick issues with these labels first. Repeatable; comma-split. Default: {','.join(DEFAULT_PRIORITY_LABELS)}.",
+    )
+    p.add_argument(
+        "--skip-deps",
+        action="store_true",
+        help="Skip issues whose body says 'blocked by #N' / 'depends on #N' where #N (or ENG-N for Linear) is still open.",
+    )
+    p.add_argument(
+        "--close-mode",
+        choices=["commit", "pr"],
+        default="commit",
+        help="commit: stage+commit on the working branch, push, close issue (default). pr: cut a feature branch, push, open a PR with `Closes #N` so merge auto-closes.",
+    )
+    p.add_argument(
+        "--pr-base",
+        metavar="BRANCH",
+        help="Base branch for --close-mode=pr. Default: the GitHub repo's default branch (gh repo view).",
+    )
+    p.add_argument(
+        "--branch-pattern",
+        default="agent/{kind}-{id}-{slug}",
+        metavar="TMPL",
+        help="Branch name template for --close-mode=pr. Vars: {kind} (gh|lin), {id} (number/identifier, lowercased), {slug} (5-word kebab-case of the title). Default: agent/{kind}-{id}-{slug}.",
+    )
     p.add_argument("--model", default="opus", metavar="MODEL", help="Claude model (default: opus)")
-    p.add_argument("--stop-at", metavar="HH:MM", help="Hard deadline; wraps to tomorrow if already past")
+    deadline = p.add_mutually_exclusive_group()
+    deadline.add_argument("--stop-at", metavar="HH:MM", help="Hard deadline at a wall-clock time; wraps to tomorrow if already past. Cross-platform alternative: --stop-after.")
+    deadline.add_argument("--stop-after", metavar="DURATION", type=parse_duration, help="Hard deadline N from now, e.g. 6h, 90m, 30s. Cross-platform — no `date` arithmetic in the shell.")
     p.add_argument(
         "--check-interval",
         metavar="DURATION",
         type=parse_duration,
-        help="Sleep between sessions when backlog empty, e.g. 30m, 1h (requires --stop-at)",
+        help="Sleep this long after every session ends and when the backlog is empty, e.g. 15m, 1h (requires --stop-at or --stop-after)",
     )
     p.add_argument("--log-dir", metavar="DIR", help="Session log directory (default: ~/logs/agent-loop/<name>/)")
     p.add_argument("--name", metavar="NAME", help="Name used in log filenames (default: prompt filename stem)")
     p.add_argument("--verbose", action="store_true", help="Print raw backlog check responses for debugging")
+    p.add_argument(
+        "--print-ticket",
+        action="store_true",
+        help="Pick a ticket, render the {{TICKET}} block, print it, and exit. Does not spawn Claude. Useful for dry-running selection rules.",
+    )
 
 
 def main() -> None:
@@ -490,12 +1084,12 @@ def main() -> None:
     if args.subcommand == "init":
         cmd_init(args)
     elif args.subcommand == "run":
-        if not args.prompt:
-            parser.error("--prompt is required for the run subcommand")
+        if not args.prompt and not args.role:
+            parser.error("pass --prompt or --role for the run subcommand")
         cmd_run(args)
     elif args.subcommand is None:
-        # No subcommand — treat as `run` if --prompt given, else print help
-        if args.prompt:
+        # No subcommand — treat as `run` if --prompt or --role given, else print help
+        if args.prompt or args.role:
             cmd_run(args)
         else:
             parser.print_help()
