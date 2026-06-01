@@ -26,93 +26,35 @@ TICKET_MARKER = "{{TICKET}}"
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_PROMPTS_DIR = SCRIPT_DIR / "agent-prompts"
+
+DEFAULT_PROMPT = """\
+You are running headless via agent-loop. No human will answer questions in this session.
+
+{{TICKET}}
+
+Before doing anything: read CLAUDE.md, then run `git log --oneline -15` and `git status`.
+
+Execute exactly what the ticket says. Follow its close instructions when done. Stop after the close step.
+
+Hard rules: never push to main/master, never force-push, never --no-verify. \
+If the working tree is dirty at session start, abort. \
+If the ticket is ambiguous or out-of-scope, post a comment explaining why and stop — don't guess.\
+"""
+
 
 # ---------------------------------------------------------------------------
 # Embedded meta-prompt for `agent-loop init`
 # ---------------------------------------------------------------------------
 
-INIT_META_PROMPT = """You are helping the user create a tailored agent-prompt.md for their project.
-Each agent session that uses this prompt will be stateless — it knows nothing about prior sessions.
-The issue tracker (Linear or GitHub) is the single source of truth: open = todo, closed/done = finished.
-Your job is to produce a prompt so precise that any session can pick one ticket and complete it correctly with no outside context.
+INIT_META_PROMPT = """\
+Help the user get agent-loop running on their project. Ask these questions one at a time:
 
-## Step 1 — Read the project silently (do not narrate this to the user)
-- Read CLAUDE.md if it exists
-- Read README.md or README if it exists
-- Run: git log --oneline -20
-- Run: ls scripts/ 2>/dev/null || true
-- Identify the tech stack (languages, frameworks, build tools, test runner)
+1. Where is the backlog? (a) Linear — project name + state that means "ready", e.g. "Backlog" \
+(b) GitHub Issues — owner/repo + optional label filter (c) neither
+2. How should tickets be closed? commit-on-branch (default) or feature-branch + PR?
+3. Any hard constraints? (e.g. never push to main, labels to skip)
 
-## Step 2 — Interview the user, ONE question at a time, waiting for each answer
-
-Q1. What is this project? (one sentence)
-
-Q2. Where is the backlog?
-    a) Linear — what is the project name, and what state means "ready to work"? (e.g. Backlog, Todo)
-    b) GitHub Issues — what is the owner/repo and which label marks ready tickets?
-    c) Neither — the agent just runs the prompt on a loop with no backlog check.
-
-Q3. How does the agent pick which ticket to work on?
-    (e.g. highest priority first, lowest ticket number first, specific label ordering, dependencies to respect)
-
-Q4. How does the agent verify its work is correct before closing a ticket?
-    Give me the exact commands: build, type-check, test, lint — whatever this project uses.
-    If there are none, say so explicitly.
-
-Q5. What does closing a ticket look like, step by step?
-    (e.g. move Linear state to Done + leave a comment; open a PR; merge to main; push a branch; nothing)
-
-Q6. What are the branch and commit conventions?
-    (e.g. one branch per ticket named feat/TICK-123-slug; conventional commits; all work on a single branch)
-
-Q7. What are the stack-specific steps that must never be skipped?
-    Think: codegen commands, migration commands, file generation, cache busting, anything easy to forget.
-    List the exact shell commands.
-
-Q8. What is forbidden or dangerous in this project?
-    (e.g. never push to main, never touch generated files directly, never run migrations in production)
-
-## Step 3 — Write the prompt file
-
-After all answers are collected, write ./scripts/agent-prompt.md.
-
-The file must have these sections in this order:
-
-### Mission
-One sentence: what this agent builds and why.
-
-### Orient
-Exact read steps the agent should do at session start to understand the current state of the codebase.
-No PROGRESS.md or session-continuity files — the issue tracker is the only state.
-
-### {{TICKET}}
-This is a literal placeholder. Write the four braces verbatim, on their own line, with no surrounding text.
-agent-loop pre-picks the ticket using its --skip-label / --prioritize-label / --skip-deps flags
-and substitutes the rendered ticket block (source, title, labels, body, AND close instructions)
-here before passing the prompt to Claude. Do NOT include any `gh issue list` or Linear MCP picking
-instructions; the prompt does not run a picker.
-
-If Q2 was "neither" (no backlog), omit this section entirely — the loop will run the prompt as-is.
-
-### Implement
-Numbered steps. Include the exact shell commands from Q7 woven into the workflow at the right points.
-Reference where patterns live (e.g. "follow the pattern in backend/models/").
-
-### Verify
-The exact commands from Q4, in order. What a passing result looks like. What to do if a check fails.
-
-### Close the ticket
-Do NOT spell out commit / push / `gh issue close` / `gh pr create` here — the {{TICKET}} block
-above already renders the exact commands for the active --close-mode (commit-on-branch vs
-feature-branch + PR). This section should just say "follow the **To close** block above and stop."
-
-### Rules
-Bullet list of hard constraints from Q8, plus: "Work one ticket per session. Stop after closing it."
-
-## Step 4 — Tell the user
-
-Confirm the file was written, show the path, and print the exact agent-loop command to run it.
+Then print the exact `agent-loop run` command to copy-paste.
 """
 
 # ---------------------------------------------------------------------------
@@ -145,6 +87,21 @@ def parse_stop_at(s: str) -> datetime:
 
 def past_deadline(deadline: datetime | None) -> bool:
     return deadline is not None and datetime.now() >= deadline
+
+
+def _git(*args: str, fallback: str = "") -> str:
+    try:
+        return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return fallback
+
+
+def _gh(*args: str, timeout: int = 30) -> str | None:
+    try:
+        r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return None
+    return r.stdout if r.returncode == 0 else None
 
 
 def _linear_graphql(query: str, variables: dict | None = None) -> dict:
@@ -721,6 +678,46 @@ def run_session(
         return subprocess.run(cmd, stdout=logfile, stderr=logfile)
 
 
+def run_unblock_session(
+    failure_reason: str,
+    log_path: Path,
+    model: str,
+    ticket: dict | None = None,
+) -> bool:
+    """Spawn a child session to diagnose and fix a loop failure.
+
+    Returns True if the loop should continue, False if it should stop.
+    The child exits 1 to signal an unrecoverable stop.
+    """
+    ticket_summary = ""
+    if ticket:
+        ref = f"#{ticket['number']}" if ticket["kind"] == "github" else ticket["identifier"]
+        ticket_summary = f"Ticket: {ref} — {ticket['title']}\n\n"
+
+    prompt = f"""\
+The agent-loop encountered an issue and needs you to unblock it.
+
+Failure: {failure_reason}
+
+{ticket_summary}Last session log:
+{tail_last_message(log_path, max_chars=1200)}
+
+Diagnose and fix the issue if you can (bad git state, dirty working tree, \
+ambiguous ticket, missing dependency). Do not do the ticket's work.
+
+If the loop should stop (unrecoverable error, infra is broken, ticket is \
+genuinely blocked with no fix available), run: exit 1
+Otherwise fix what you can and exit normally so the loop continues.
+"""
+    unblock_log = log_path.with_suffix(".unblock.log")
+    print(f"    Unblock:   spawning child session → {unblock_log}")
+    result = run_session(prompt, model, unblock_log)
+    tail = tail_last_message(unblock_log)
+    if tail:
+        print(f"    Unblock:   {tail}")
+    return result.returncode == 0
+
+
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
@@ -816,8 +813,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(render_ticket_block(ticket, branch, args.close_mode, pr_base, args.branch_pattern))
         sys.exit(0)
 
-    # Derive name and log dir
-    name = args.name or prompt_path.stem
+    name = args.name or (prompt_path.stem if prompt_path else "agent")
     log_dir = Path(args.log_dir or f"~/logs/agent-loop/{name}").expanduser().resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -831,7 +827,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     # Startup summary
     print("=== agent-loop ===")
-    print(f"    Prompt:  {prompt_path}")
+    print(f"    Prompt:  {prompt_path or '(inline)'}")
     print(f"    Model:   {args.model}")
     print(f"    Logs:    {log_dir}")
     print(f"    Branch:  {branch}")
@@ -911,19 +907,17 @@ def cmd_run(args: argparse.Namespace) -> None:
         head_after = git_head_short()
         commits = git_commits_between(head_before, head_after)
 
-        # Failure: Claude itself crashed.
         if result.returncode != 0:
             print(f"    Result:    ✗ session crashed (exit code {result.returncode})")
             tail = tail_last_message(log_path)
             if tail:
                 print(f"    Last msg:  {tail}")
             print(f"    Duration:  {format_duration(duration)}")
-            print(f"\n=== agent-loop stopping after session #{session} (Claude exited non-zero) ===")
-            break
+            if not run_unblock_session(f"Claude exited with code {result.returncode}", log_path, args.model, ticket):
+                print(f"\n=== agent-loop stopping after session #{session} (unblock failed) ===")
+                break
+            continue
 
-        # No-op: session ran cleanly but landed no commit. Could mean the picked ticket was
-        # genuinely undoable and the session commented + exited — not an error. Sleep and
-        # try again later if a check-interval was given; otherwise stop.
         if not commits:
             print(f"    Result:    — no progress (HEAD unchanged at {head_before})")
             tail = tail_last_message(log_path)
@@ -946,9 +940,6 @@ def cmd_run(args: argparse.Namespace) -> None:
             if check_interval_secs is None:
                 print(f"\n=== agent-loop stopping after session #{session} (no commit landed and no --check-interval) ===")
                 break
-            wake = datetime.now() + timedelta(seconds=check_interval_secs)
-            print(f"    No-op — sleeping until {wake.strftime('%H:%M:%S')}")
-            time.sleep(check_interval_secs)
             continue
 
         # Success.
