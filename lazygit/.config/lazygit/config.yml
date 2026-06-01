@@ -1,5 +1,6 @@
 git:
   branchPrefix: pal/
+  autoFetch: false
 os:
   edit: nvim --server $NVIM --remote-tab {{filename}}
 

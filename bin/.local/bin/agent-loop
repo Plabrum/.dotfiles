@@ -27,109 +27,6 @@ LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PROMPTS_DIR = SCRIPT_DIR / "agent-prompts"
-AVAILABLE_ROLES = ["engineer", "qa"]
-
-# Per-role allowlists passed to `claude --allowedTools`. Anything not listed
-# will prompt at runtime — and since these run headless via `claude -p`, a
-# prompt = a hang. So the allowlist must cover everything the role legitimately
-# does, and intentionally omit destructive surfaces (force-push, hard reset,
-# repo/issue delete, deploy/submit/release, db reset --linked, rm -rf, .env
-# edits) so they fail loudly instead of executing silently.
-#
-# Custom prompts (--prompt without --role) fall back to
-# --dangerously-skip-permissions for backward compatibility.
-ROLE_ALLOWED_TOOLS = {
-    "qa": [
-        # GitHub backlog — read + file bugs. No close/edit/delete.
-        "Bash(gh issue list:*)",
-        "Bash(gh issue view:*)",
-        "Bash(gh issue create:*)",
-        "Bash(gh issue comment:*)",
-        # Linear — read + comment. No state changes from QA.
-        "mcp__claude_ai_Linear__list_issues",
-        "mcp__claude_ai_Linear__get_issue",
-        "mcp__claude_ai_Linear__list_comments",
-        "mcp__claude_ai_Linear__save_comment",
-        "mcp__claude_ai_Linear__get_team",
-        "mcp__claude_ai_Linear__list_issue_labels",
-        # Read-only git for orientation.
-        "Bash(git status)",
-        "Bash(git status:*)",
-        "Bash(git log:*)",
-        "Bash(git diff:*)",
-        "Bash(git rev-parse:*)",
-        "Bash(git branch --show-current)",
-        # Dev stack bring-up + diagnostics.
-        "Bash(npm run supabase:start)",
-        "Bash(npm run supabase:stop)",
-        "Bash(bash scripts/dev-sim.sh)",
-        "Bash(bash scripts/db-fixtures.sh)",
-        "Bash(bash scripts/db-reset.sh)",
-        "Bash(nohup bash scripts/dev-sim.sh*)",
-        "Bash(curl:*)",
-        "Bash(tail:*)",
-        "Bash(sleep:*)",
-        "Bash(psql postgresql://postgres:postgres@127.0.0.1:54322/*)",
-        "Bash(npx tsx:*)",
-        # Simulator MCP — full surface; the skill governs usage.
-        "mcp__XcodeBuildMCP__*",
-        # Scratchpad + repo reads.
-        "Read",
-        "Write",
-        "Edit",
-        "Glob",
-        "Grep",
-    ],
-    "engineer": [
-        # Git workflow — commit + push to feature branches. No force-push, no hard reset.
-        "Bash(git status)",
-        "Bash(git status:*)",
-        "Bash(git log:*)",
-        "Bash(git diff:*)",
-        "Bash(git add:*)",
-        "Bash(git commit:*)",
-        "Bash(git push)",
-        "Bash(git push -u origin:*)",
-        "Bash(git push origin:*)",
-        "Bash(git checkout:*)",
-        "Bash(git switch:*)",
-        "Bash(git branch:*)",
-        "Bash(git rev-parse:*)",
-        "Bash(git stash:*)",
-        "Bash(git fetch:*)",
-        "Bash(git pull --ff-only:*)",
-        "Bash(git restore:*)",
-        # GitHub PRs + issue lifecycle.
-        "Bash(gh pr create:*)",
-        "Bash(gh pr view:*)",
-        "Bash(gh pr edit:*)",
-        "Bash(gh pr comment:*)",
-        "Bash(gh pr checks:*)",
-        "Bash(gh issue list:*)",
-        "Bash(gh issue view:*)",
-        "Bash(gh issue close:*)",
-        "Bash(gh issue comment:*)",
-        "Bash(gh repo view:*)",
-        # Linear — full read/write for state transitions.
-        "mcp__claude_ai_Linear__*",
-        # Build / test / codegen.
-        "Bash(npm run:*)",
-        "Bash(npx:*)",
-        "Bash(node:*)",
-        "Bash(deno:*)",
-        "Bash(bash scripts/*)",
-        "Bash(rg:*)",
-        "Bash(find:*)",
-        "Bash(ls:*)",
-        "Bash(cat:*)",
-        # Code edits.
-        "Read",
-        "Write",
-        "Edit",
-        "Glob",
-        "Grep",
-    ],
-}
 
 # ---------------------------------------------------------------------------
 # Embedded meta-prompt for `agent-loop init`
@@ -306,6 +203,112 @@ query AgentLoopState($id: String!) {
   }
 }
 """
+
+
+_LINEAR_TEAM_STATES_QUERY = """
+query AgentLoopTeamStates($id: String!) {
+  issue(id: $id) {
+    team {
+      states {
+        nodes { id name type }
+      }
+    }
+  }
+}
+"""
+
+
+_LINEAR_ISSUE_DETAILS_QUERY = """
+query AgentLoopIssueDetails($id: String!) {
+  issue(id: $id) {
+    labels { nodes { name } }
+  }
+}
+"""
+
+
+_LINEAR_UPDATE_STATE_MUTATION = """
+mutation AgentLoopUpdateState($id: String!, $stateId: String!) {
+  issueUpdate(id: $id, input: { stateId: $stateId }) {
+    success
+  }
+}
+"""
+
+
+def _linear_team_states(issue_id: str) -> list[dict]:
+    """Return the issue's team's full state list, or [] on error."""
+    try:
+        data = _linear_graphql(_LINEAR_TEAM_STATES_QUERY, {"id": issue_id})
+    except Exception:
+        return []
+    return (
+        ((data.get("issue") or {}).get("team") or {}).get("states") or {}
+    ).get("nodes") or []
+
+
+def _pick_state(states: list[dict], preferred_names: list[str], state_type: str | None = None) -> dict | None:
+    """Pick a state by preferred name (case-insensitive), falling back to first of state_type."""
+    by_lower_name = {(s.get("name") or "").lower(): s for s in states}
+    for name in preferred_names:
+        s = by_lower_name.get(name.lower())
+        if s:
+            return s
+    if state_type:
+        for s in states:
+            if s.get("type") == state_type:
+                return s
+    return None
+
+
+def linear_mark_in_progress(issue_id: str) -> tuple[bool, str | None]:
+    """Move the issue to 'In Progress' (preferred) or the first started-type state.
+
+    Returns (success, state_name). Best-effort: returns (False, None) on any error.
+    """
+    states = _linear_team_states(issue_id)
+    target = _pick_state(states, preferred_names=["In Progress"], state_type="started")
+    if not target:
+        return False, None
+    try:
+        result = _linear_graphql(
+            _LINEAR_UPDATE_STATE_MUTATION,
+            {"id": issue_id, "stateId": target["id"]},
+        )
+    except Exception:
+        return False, None
+    success = bool(((result.get("issueUpdate") or {}).get("success")))
+    return success, target.get("name")
+
+
+def linear_mark_backlog(issue_id: str) -> tuple[bool, str | None]:
+    """Move the issue back to 'Backlog' (preferred) or the first backlog-type state.
+
+    Returns (success, state_name). Best-effort: returns (False, None) on any error.
+    """
+    states = _linear_team_states(issue_id)
+    target = _pick_state(states, preferred_names=["Backlog"], state_type="backlog")
+    if not target:
+        return False, None
+    try:
+        result = _linear_graphql(
+            _LINEAR_UPDATE_STATE_MUTATION,
+            {"id": issue_id, "stateId": target["id"]},
+        )
+    except Exception:
+        return False, None
+    success = bool(((result.get("issueUpdate") or {}).get("success")))
+    return success, target.get("name")
+
+
+def linear_issue_labels(issue_id: str) -> list[str]:
+    """Return the issue's label names, or [] on error."""
+    try:
+        data = _linear_graphql(_LINEAR_ISSUE_DETAILS_QUERY, {"id": issue_id})
+    except Exception:
+        return []
+    labels = ((data.get("issue") or {}).get("labels") or {}).get("nodes") or []
+    return [l.get("name") or "" for l in labels]
 
 
 def pick_linear_ticket(
@@ -712,16 +715,8 @@ def run_session(
     prompt_text: str,
     model: str,
     log_path: Path,
-    role: str | None,
 ) -> subprocess.CompletedProcess:
-    cmd = ["claude", "-p", prompt_text, "--model", model]
-    allowed = ROLE_ALLOWED_TOOLS.get(role) if role else None
-    if allowed:
-        for tool in allowed:
-            cmd.extend(["--allowedTools", tool])
-    else:
-        # Custom prompts (no role) keep the old unrestricted behavior.
-        cmd.insert(1, "--dangerously-skip-permissions")
+    cmd = ["claude", "--dangerously-skip-permissions", "-p", prompt_text, "--model", model]
     with open(log_path, "w") as logfile:
         return subprocess.run(cmd, stdout=logfile, stderr=logfile)
 
@@ -743,14 +738,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         print("Error: --check-interval requires --stop-at or --stop-after", file=sys.stderr)
         sys.exit(1)
 
-    # Resolve prompt: --prompt wins; otherwise --role looks up a colocated default.
-    if args.prompt:
-        prompt_path = Path(args.prompt).expanduser().resolve()
-    elif args.role:
-        prompt_path = (DEFAULT_PROMPTS_DIR / f"{args.role}.md").resolve()
-    else:
-        print("Error: pass --prompt <path> or --role {" + "|".join(AVAILABLE_ROLES) + "}.", file=sys.stderr)
+    if not args.prompt:
+        print("Error: --prompt <path> is required.", file=sys.stderr)
         sys.exit(1)
+    prompt_path = Path(args.prompt).expanduser().resolve()
     if not prompt_path.exists():
         print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
         sys.exit(1)
@@ -898,6 +889,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"    Picked up: #{ticket['number']} {ticket['title']}")
         else:
             print(f"    Picked up: {ticket['identifier']} {ticket['title']}")
+            success, state_name = linear_mark_in_progress(ticket["id"])
+            if success:
+                print(f"    Claimed:   moved to '{state_name}'")
+            else:
+                print("    Claimed:   (could not auto-advance state; continuing)")
         print(f"    Log:       {log_path}")
 
         if ticket is None:
@@ -909,7 +905,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             )
 
         start = time.monotonic()
-        result = run_session(session_prompt, args.model, log_path, args.role)
+        result = run_session(session_prompt, args.model, log_path)
         duration = time.monotonic() - start
 
         head_after = git_head_short()
@@ -934,6 +930,19 @@ def cmd_run(args: argparse.Namespace) -> None:
             if tail:
                 print(f"    Last msg:  {tail}")
             print(f"    Duration:  {format_duration(duration)}")
+            # For Linear tickets: revert the state back to Backlog so the next picker
+            # pass can re-evaluate. We only do this when the ticket hasn't been shelved
+            # via the `tracker` label — that label is the agent's "do not retry" signal.
+            if ticket is not None and ticket["kind"] == "linear":
+                current_labels = {l.lower() for l in linear_issue_labels(ticket["id"])}
+                if "tracker" in current_labels:
+                    print(f"    Shelved:   {ticket['identifier']} has `tracker` label — leaving state as-is")
+                else:
+                    reverted, state_name = linear_mark_backlog(ticket["id"])
+                    if reverted:
+                        print(f"    Reverted:  {ticket['identifier']} moved back to '{state_name}'")
+                    else:
+                        print(f"    Reverted:  could not move {ticket['identifier']} back (continuing)")
             if check_interval_secs is None:
                 print(f"\n=== agent-loop stopping after session #{session} (no commit landed and no --check-interval) ===")
                 break
@@ -961,12 +970,10 @@ def cmd_run(args: argparse.Namespace) -> None:
                 print(f"               closed {ticket['identifier']}")
 
         print(f"    Duration:  {format_duration(duration)}")
-        if check_interval_secs is not None:
-            wake = datetime.now() + timedelta(seconds=check_interval_secs)
-            print(f"    Sleeping until {wake.strftime('%H:%M:%S')}")
-            time.sleep(check_interval_secs)
-        else:
-            time.sleep(5)
+        # After a successful commit, jump straight into the next pick. The 5s pause
+        # gives git/network a moment to settle and leaves a Ctrl-C window. The
+        # --check-interval setting is reserved for empty-backlog / no-op cases.
+        time.sleep(5)
 
     print(f"\n=== agent-loop finished after {session} session(s) ===")
 
@@ -1009,12 +1016,7 @@ def _split_label_csv(values: list[str] | None) -> list[str] | None:
 
 
 def _add_run_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--role",
-        choices=AVAILABLE_ROLES,
-        help=f"Resolve to a colocated default prompt at {DEFAULT_PROMPTS_DIR}/<role>.md. --prompt overrides if given.",
-    )
-    p.add_argument("--prompt", metavar="PATH", help="Path to prompt markdown file. Wins over --role. Must contain the {{TICKET}} placeholder when a backlog source is configured.")
+    p.add_argument("--prompt", metavar="PATH", help="Path to prompt markdown file. Must contain the {{TICKET}} placeholder when a backlog source is configured.")
     backlog = p.add_mutually_exclusive_group()
     backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name (uses LINEAR_API_KEY env var)")
     backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
@@ -1084,12 +1086,12 @@ def main() -> None:
     if args.subcommand == "init":
         cmd_init(args)
     elif args.subcommand == "run":
-        if not args.prompt and not args.role:
-            parser.error("pass --prompt or --role for the run subcommand")
+        if not args.prompt:
+            parser.error("pass --prompt for the run subcommand")
         cmd_run(args)
     elif args.subcommand is None:
-        # No subcommand — treat as `run` if --prompt or --role given, else print help
-        if args.prompt or args.role:
+        # No subcommand — treat as `run` if --prompt given, else print help
+        if args.prompt:
             cmd_run(args)
         else:
             parser.print_help()

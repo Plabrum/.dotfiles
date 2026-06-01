@@ -28,10 +28,10 @@ return {
       win = {
         input = {
           keys = {
-            ["J"] = { "preview_scroll_down", mode = { "i", "n" } },
-            ["K"] = { "preview_scroll_up", mode = { "i", "n" } },
-            ["H"] = { "preview_scroll_left", mode = { "i", "n" } },
-            ["L"] = { "preview_scroll_right", mode = { "i", "n" } },
+            ["J"] = { "preview_scroll_down", mode = { "n" } },
+            ["K"] = { "preview_scroll_up", mode = { "n" } },
+            ["H"] = { "preview_scroll_left", mode = { "n" } },
+            ["L"] = { "preview_scroll_right", mode = { "n" } },
           },
         },
       },
