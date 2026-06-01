@@ -9,6 +9,8 @@ return {
         "vimdoc",
         "markdown",
         "markdown_inline",
+        "terraform",
+        "hcl",
       },
     },
   },

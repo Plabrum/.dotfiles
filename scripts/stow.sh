@@ -17,6 +17,7 @@ AVAILABLE_PACKAGES=(
     "ghostty"
     "karabiner"
     "bin"
+    "claude"
 )
 
 # Default packages to stow if no arguments provided
@@ -26,6 +27,7 @@ DEFAULT_PACKAGES=(
     "nvim"
     "tmux"
     "bin"
+    "claude"
 )
 
 show_help() {

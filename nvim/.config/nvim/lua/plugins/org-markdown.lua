@@ -5,6 +5,7 @@ return {
     -- name = "org_markdown",
     -- dev = true,
     "Plabrum/org-markdown",
+    enabled = false,
     opts = {
       window_method = "float",
       -- captures = {
