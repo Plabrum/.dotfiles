@@ -64,6 +64,14 @@ vim.keymap.set({ "n", "x" }, "p", "<Plug>(YankyPutAfter)", { desc = "Put Text Af
 vim.keymap.set({ "n", "x" }, "P", "<Plug>(YankyPutBefore)", { desc = "Put Text Before Cursor" })
 vim.keymap.set({ "n", "x" }, "gp", "<Plug>(YankyGPutAfter)", { desc = "Put Text After Selection" })
 vim.keymap.set({ "n", "x" }, "gP", "<Plug>(YankyGPutBefore)", { desc = "Put Text Before Selection" })
+
+-- Replace visual selection with register contents without clobbering the
+-- register: delete into the black hole register, then paste. (What
+-- substitute.nvim's `require("substitute").visual()` did in nvim-lazyvim,
+-- minus the plugin -- `clipboard = "unnamedplus"` already makes the unnamed
+-- register the system clipboard, so `P` here pastes from it.)
+vim.keymap.set("x", "r", [["_dP]], { desc = "Replace selection with register" })
+
 vim.keymap.set("n", "[y", "<Plug>(YankyCycleForward)", { desc = "Cycle Forward Through Yank History" })
 vim.keymap.set("n", "]y", "<Plug>(YankyCycleBackward)", { desc = "Cycle Backward Through Yank History" })
 vim.keymap.set({ "n", "x" }, "<leader>p", "<cmd>YankyRingHistory<CR>", { desc = "Open Yank History" })
