@@ -101,6 +101,7 @@ return {
   },
   {
     "MeanderingProgrammer/render-markdown.nvim",
+    enabled = false,
     opts = {
       checkbox = {
         enabled = true,

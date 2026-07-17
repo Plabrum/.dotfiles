@@ -1,0 +1,5 @@
+WRN 2026-07-16T15:41:56.282 ?.75552    server_start:197: Failed to start server: operation not permitted: /var/folders/8_/c1vkv8sd1r5f6dx71c15wjy40000gn/T/nvim.phil/5FwcaW/nvim-slim.75552.0
+WRN 2026-07-16T15:42:01.510 ?.75711    server_start:197: Failed to start server: operation not permitted: /var/folders/8_/c1vkv8sd1r5f6dx71c15wjy40000gn/T/nvim.phil/Zq0x9l/nvim.75711.0
+WRN 2026-07-16T15:43:16.556 ?.76429    server_start:197: Failed to start server: operation not permitted: /var/folders/8_/c1vkv8sd1r5f6dx71c15wjy40000gn/T/nvim.phil/EGiy5t/nvim-slim.76429.0
+WRN 2026-07-16T15:50:32.514 ?.79431    server_start:197: Failed to start server: operation not permitted: /var/folders/8_/c1vkv8sd1r5f6dx71c15wjy40000gn/T/nvim.phil/mVwLKa/nvim-slim.79431.0
+WRN 2026-07-16T16:03:11.057 ?.94216    server_start:197: Failed to start server: operation not permitted: /var/folders/8_/c1vkv8sd1r5f6dx71c15wjy40000gn/T/nvim.phil/wLfx3n/nvim-slim.94216.0

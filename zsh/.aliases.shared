@@ -1,5 +1,6 @@
 # Editor
 alias va="nvim ~/.aliases"
+alias nviml="NVIM_APPNAME=nvim-lazyvim nvim"
 
 # Git
 alias lg="lazygit"

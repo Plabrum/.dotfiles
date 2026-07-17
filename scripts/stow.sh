@@ -13,6 +13,7 @@ AVAILABLE_PACKAGES=(
     "zsh"
     "p10k"
     "nvim"
+    "nvim-lazyvim"
     "tmux"
     "ghostty"
     "karabiner"
