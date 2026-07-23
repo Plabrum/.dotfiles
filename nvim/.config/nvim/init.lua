@@ -41,6 +41,14 @@
 -- They load after `config.lsp`/`config.format`/`config.treesitter`, and before
 -- `config.lsp`/`config.format`'s `finalize()` calls -- see the load order below.
 
+if vim.fn.has("nvim-0.12") == 0 then
+  vim.api.nvim_echo({
+    { "nvim-slim requires Neovim >= 0.12 (needs vim.pack). ", "ErrorMsg" },
+    { "You have " .. tostring(vim.version()), "ErrorMsg" },
+  }, true, {})
+  return
+end
+
 -- `config.util` is pure Lua with no plugin dependencies, so it can be required
 -- before anything is installed.
 local util = require("config.util")
