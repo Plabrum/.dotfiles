@@ -78,6 +78,10 @@
       "rev": "b023c5280b16fe2366f5e779d8d2756b3e5ee9c3",
       "src": "https://github.com/sainnhe/sonokai"
     },
+    "substitute.nvim": {
+      "rev": "0d2077398552f069abccbd964a26dd7cd26882cd",
+      "src": "https://github.com/gbprod/substitute.nvim"
+    },
     "trouble.nvim": {
       "rev": "bd67efe408d4816e25e8491cc5ad4088e708a69a",
       "src": "https://github.com/folke/trouble.nvim"

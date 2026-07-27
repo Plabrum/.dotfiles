@@ -65,12 +65,20 @@ vim.keymap.set({ "n", "x" }, "P", "<Plug>(YankyPutBefore)", { desc = "Put Text B
 vim.keymap.set({ "n", "x" }, "gp", "<Plug>(YankyGPutAfter)", { desc = "Put Text After Selection" })
 vim.keymap.set({ "n", "x" }, "gP", "<Plug>(YankyGPutBefore)", { desc = "Put Text Before Selection" })
 
--- Replace visual selection with register contents without clobbering the
--- register: delete into the black hole register, then paste. (What
--- substitute.nvim's `require("substitute").visual()` did in nvim-lazyvim,
--- minus the plugin -- `clipboard = "unnamedplus"` already makes the unnamed
--- register the system clipboard, so `P` here pastes from it.)
-vim.keymap.set("x", "r", [["_dP]], { desc = "Replace selection with register" })
+-- Replace text with the register instead of deleting-then-pasting, without
+-- clobbering the register. `on_substitute` feeds replaced text into yanky's ring
+-- (so it must come after yanky's setup above).
+vim.pack.add({ util.gh("gbprod/substitute.nvim") })
+local substitute = require("substitute")
+substitute.setup({ on_substitute = require("yanky.integration").substitute() })
+
+-- `r` in operator-pending mode stays flash's remote (see `config.nav`); these are
+-- normal/visual only. `R` here is normal mode, so it doesn't collide with
+-- flash's `{o, x}` `R`.
+vim.keymap.set("n", "r", substitute.operator, { desc = "Substitute with motion" })
+vim.keymap.set("n", "rr", substitute.line, { desc = "Substitute line" })
+vim.keymap.set("n", "R", substitute.eol, { desc = "Substitute to end of line" })
+vim.keymap.set("x", "r", substitute.visual, { desc = "Substitute selection" })
 
 vim.keymap.set("n", "[y", "<Plug>(YankyCycleForward)", { desc = "Cycle Forward Through Yank History" })
 vim.keymap.set("n", "]y", "<Plug>(YankyCycleBackward)", { desc = "Cycle Backward Through Yank History" })

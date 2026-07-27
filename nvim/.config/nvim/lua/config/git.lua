@@ -49,7 +49,13 @@ vim.keymap.set("n", "<leader>gL", "<cmd>Git log --oneline<CR>", { desc = "[G]it 
 -- LAZYGIT (full-screen float)
 -- ============================================================
 
-vim.keymap.set("n", "<leader>gg", function()
+---Open lazygit filling the whole editor.
+---
+---Exported because the `config.ui` dashboard offers it as a one-key action too.
+---That module loads *before* this one, but it only `require`s us when the key is
+---actually pressed -- by which time we're loaded and cached.
+---@return nil
+local function lazygit()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_open_win(buf, true, {
     relative = "editor",
@@ -69,4 +75,8 @@ vim.keymap.set("n", "<leader>gg", function()
     end,
   })
   vim.cmd.startinsert()
-end, { desc = "LazyGit (floating)" })
+end
+
+vim.keymap.set("n", "<leader>gg", lazygit, { desc = "LazyGit (floating)" })
+
+return { lazygit = lazygit }

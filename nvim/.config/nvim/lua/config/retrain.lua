@@ -45,9 +45,29 @@ end, "[LazyVim compat] Rename")
 
 -- Alternate buffer. `<C-^>` is native, one keystroke, and always there.
 -- LazyVim spells both of these `<cmd>e #<cr>`, which is the same jump.
+-- Jump to the alternate buffer if one is set; otherwise fall back to the
+-- most-recently-used *other* listed buffer. LazyVim/`<C-^>` rely on `#`, which
+-- stays empty until you switch away from a buffer within the window -- so with
+-- files opened via `nvim a b` or a picker, `edit #` raises E194 even with
+-- several buffers listed. This makes the jump work regardless.
 for _, key in ipairs({ "<leader>bb", "<leader>`" }) do
   retrain(key, "<C-^>", function()
-    vim.cmd("edit #")
+    if vim.fn.expand("#") ~= "" then
+      vim.cmd("edit #")
+      return
+    end
+    local cur = vim.api.nvim_get_current_buf()
+    local alt = nil
+    for _, b in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+      if b.bufnr ~= cur and (alt == nil or b.lastused > alt.lastused) then
+        alt = b
+      end
+    end
+    if alt == nil then
+      vim.notify("No other buffer", vim.log.levels.INFO, { title = "nvim-slim retraining" })
+      return
+    end
+    vim.api.nvim_set_current_buf(alt.bufnr)
   end, "[LazyVim compat] Switch to Other Buffer")
 end
 

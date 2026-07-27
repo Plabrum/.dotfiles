@@ -38,6 +38,7 @@ vim.o.pummaxwidth = 100 -- Cap popup menu width
 vim.o.winborder = "single" -- Border around floating windows
 vim.o.confirm = true
 vim.o.laststatus = 0 -- no bottom statusline; bufferline.nvim shows files at the top instead
+vim.o.cmdheight = 0 -- collapse the command/message row when idle, so no persistent bottom footer (noice used to do this)
 -- mini.notify (see `config.ui`) only intercepts `vim.notify()`, not raw Neovim
 -- messages (`:w` "written", search counts, completion chatter). noice used to
 -- fade those too via ext_messages; the mini approach instead quiets them at the

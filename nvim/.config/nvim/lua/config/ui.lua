@@ -80,66 +80,400 @@ vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
 })
 
 -- ============================================================
--- DASHBOARD (mini.starter)
+-- DASHBOARD (mini.starter, "cockpit" layout)
 -- ============================================================
--- MiniMax's dashboard is just the default mini.starter. We keep that exact look
--- and section order, but swap its Sessions section (which expects mini.sessions)
--- for one backed by persistence.nvim, which is what nvim-slim actually uses --
--- see `config.session`.
+-- MiniMax's dashboard is the default mini.starter: a greeting, saved sessions,
+-- and globally-recent files. This is a different bet entirely.
+--
+-- Every list-shaped dashboard assumes you want to *read* on startup. But you
+-- already know what you were doing -- you closed the editor a minute ago. So
+-- this one shows no data at all: just a state line, and a handful of one-key
+-- actions whose *membership* changes with the repo. The discipline is that an
+-- action renders only when it is currently valid, so the screen can never offer
+-- a no-op and never has to say "0 of these" -- you cannot press a key for a
+-- thing that isn't true. Nothing to scan; press a key before your eyes focus
+-- and it's already gone.
+--
+-- Recent files, in particular, is gone for good: it listed files touched
+-- anywhere on disk, so opening one left cwd pointing at an unrelated project
+-- and quietly broke the pickers, grep and LSP root. `f` below does that job
+-- properly.
 
----@param n integer maximum number of sessions to list
----@return fun(): table[] a mini.starter items generator
-local function persistence_sessions(n)
-  return function()
-    local items, seen = {}, {}
-    for _, path in ipairs(require("persistence").list()) do
-      -- Session filenames encode the directory (with `/` written as `%`) and
-      -- an optional git branch as `dir%%branch` -- the same scheme decoded by
-      -- persistence's own `select()` picker.
-      local dir, branch = unpack(vim.split(vim.fn.fnamemodify(path, ":t:r"), "%%", { plain = true }))
-      dir = dir:gsub("%%", "/")
-      if not seen[dir] then
-        seen[dir] = true
-        local name = vim.fn.fnamemodify(dir, ":~")
-        if branch then
-          name = ("%s (%s)"):format(name, branch)
-        end
-        items[#items + 1] = {
-          name = name,
-          section = "Sessions",
-          action = function()
-            vim.fn.chdir(dir)
-            require("persistence").load()
-          end,
-        }
-        if #items >= n then
-          break
+---@class SlimRepo
+---@field root string? repo root; nil outside a repo
+---@field branch string? nil outside a repo or on a detached HEAD
+---@field dirty integer changed files (working tree + index)
+---@field conflicts integer unmerged paths
+---@field ahead integer commits we have that the upstream doesn't
+---@field behind integer commits the upstream has that we don't
+---@field stashes integer stash entries
+---@field stash_top string? subject of the most recent stash
+---@field rebasing boolean
+---@field merging boolean
+---@field session boolean cwd has a saved persistence session
+
+---`<root>/.git` is a directory in a normal clone but a `gitdir: <path>` pointer
+---file inside a linked worktree -- follow it so the in-progress checks below
+---look in the right place. Cheaper than a `git rev-parse --git-path` process.
+---@param root string
+---@return string?
+local function resolve_gitdir(root)
+  local dot = vim.fs.joinpath(root, ".git")
+  local stat = vim.uv.fs_stat(dot)
+  if not stat then
+    return nil
+  end
+  if stat.type == "directory" then
+    return dot
+  end
+  local pointer = (vim.fn.readfile(dot, "", 1)[1] or ""):match("^gitdir: (.+)$")
+  if not pointer then
+    return nil
+  end
+  -- The pointer is relative to the worktree in `git worktree` layouts.
+  return vim.fs.normalize(pointer:sub(1, 1) == "/" and pointer or vim.fs.joinpath(root, pointer))
+end
+
+---@param path string
+---@return boolean
+local function exists(path)
+  return vim.uv.fs_stat(path) ~= nil
+end
+
+---Does cwd have a saved session? Reuses persistence's own filename scheme: the
+---directory with `/` written as `%`, plus an optional `%%branch` suffix.
+---@return boolean
+local function has_session()
+  local cwd = vim.uv.cwd()
+  for _, path in ipairs(require("persistence").list()) do
+    local encoded = vim.split(vim.fn.fnamemodify(path, ":t:r"), "%%", { plain = true })[1]
+    if encoded:gsub("%%", "/") == cwd then
+      return true
+    end
+  end
+  return false
+end
+
+---mini.starter evaluates `header`/`items` when the buffer opens rather than at
+---setup, and the keymaps below need the same answer -- so this runs once per
+---dashboard, not once per caller.
+---@type table<string, SlimRepo>
+local state_cache = {}
+
+---@return SlimRepo
+local function repo_state()
+  local cwd = vim.uv.cwd() or ""
+  if state_cache[cwd] then
+    return state_cache[cwd]
+  end
+
+  ---@type SlimRepo
+  local s = {
+    root = vim.fs.root(cwd, ".git"),
+    dirty = 0,
+    conflicts = 0,
+    ahead = 0,
+    behind = 0,
+    stashes = 0,
+    rebasing = false,
+    merging = false,
+    session = has_session(),
+  }
+
+  if s.root then
+    -- One process for branch, divergence and file counts. `-b` prepends a
+    -- `## branch...upstream [ahead 1, behind 2]` line; `--no-renames` keeps
+    -- every other line a plain `XY path` with no ` -> ` form to special-case.
+    local out = vim.fn.systemlist({ "git", "status", "--porcelain=v1", "-b", "--no-renames" })
+    if vim.v.shell_error == 0 then
+      local head = out[1] or ""
+      s.branch = head:match("^## ([^%.%s]+)")
+      -- A detached HEAD reports `## HEAD (no branch)`; there's no branch to name.
+      s.branch = s.branch ~= "HEAD" and s.branch or nil
+      s.ahead = tonumber(head:match("ahead (%d+)")) or 0
+      s.behind = tonumber(head:match("behind (%d+)")) or 0
+      for _, line in ipairs(vim.list_slice(out, 2)) do
+        -- Unmerged paths are the codes with a `U` on either side, plus the
+        -- both-added / both-deleted pairs. Everything else is an ordinary change.
+        local xy = line:sub(1, 2)
+        local unmerged = xy:find("U", 1, true) or xy == "AA" or xy == "DD"
+        if unmerged then
+          s.conflicts = s.conflicts + 1
+        else
+          s.dirty = s.dirty + 1
         end
       end
     end
-    if #items == 0 then
-      return { { name = "There are no saved sessions", action = "", section = "Sessions" } }
+
+    local gitdir = resolve_gitdir(s.root)
+    if gitdir then
+      -- The stash reflog is one line per entry, so it answers both "how many"
+      -- and "what was the last one" without spawning `git stash list`.
+      local reflog = vim.fs.joinpath(gitdir, "logs/refs/stash")
+      local entries = exists(reflog) and vim.fn.readfile(reflog) or {}
+      s.stashes = #entries
+      -- An auto-stash logs `WIP on main: <sha> <subject>`, an explicit one
+      -- `On main: <message>`. Try the sha-bearing form first so the subject
+      -- isn't prefixed with a hash nobody can read at a glance.
+      local top = entries[#entries] or ""
+      s.stash_top = top:match("\t.-: %x+ (.*)$") or top:match("\t.-: (.*)$")
+      s.rebasing = exists(gitdir .. "/rebase-merge") or exists(gitdir .. "/rebase-apply")
+      s.merging = exists(gitdir .. "/MERGE_HEAD")
     end
-    return items
   end
+
+  state_cache[cwd] = s
+  return s
+end
+
+---@param n integer
+---@param singular string
+---@return string
+local function plural(n, singular)
+  return ("%d %s%s"):format(n, singular, n == 1 and "" or "s")
+end
+
+---@class SlimAction
+---@field key string the single key that runs it
+---@field label string|fun(s: SlimRepo): string
+---@field run fun(s: SlimRepo)
+---@field when (fun(s: SlimRepo): boolean)? omitted means always available
+
+-- Order is screen order. Interrupted operations lead (they block everything
+-- else), then whatever this repo currently affords, then the three that are
+-- always true -- so the constant block keeps a stable position at the bottom
+-- however much the contextual block above it grows or shrinks.
+---@type SlimAction[]
+local ACTIONS = {
+  {
+    key = "r",
+    when = function(s)
+      return s.conflicts > 0
+    end,
+    label = function(s)
+      return "resolve " .. plural(s.conflicts, "conflict")
+    end,
+    run = function()
+      Snacks.picker.git_status()
+    end,
+  },
+  {
+    key = "c",
+    when = function(s)
+      return s.rebasing or s.merging
+    end,
+    label = function(s)
+      return s.rebasing and "continue rebase" or "continue merge"
+    end,
+    run = function(s)
+      vim.cmd.Git(s.rebasing and "rebase --continue" or "merge --continue")
+    end,
+  },
+  {
+    key = "A",
+    when = function(s)
+      return s.rebasing or s.merging
+    end,
+    label = function(s)
+      return s.rebasing and "abort rebase" or "abort merge"
+    end,
+    -- Capitalised: aborting throws away work, so it shouldn't sit under a key
+    -- you might hit while reaching for something else.
+    run = function(s)
+      vim.cmd.Git(s.rebasing and "rebase --abort" or "merge --abort")
+    end,
+  },
+  {
+    key = "s",
+    when = function(s)
+      return s.session
+    end,
+    label = "resume session here",
+    run = function()
+      require("persistence").load()
+    end,
+  },
+  {
+    key = "S",
+    label = "session in another project",
+    run = function()
+      require("persistence").select()
+    end,
+  },
+  {
+    key = "d",
+    when = function(s)
+      return s.dirty > 0
+    end,
+    label = function(s)
+      return "review " .. plural(s.dirty, "change")
+    end,
+    run = function()
+      Snacks.picker.git_status()
+    end,
+  },
+  {
+    key = "p",
+    when = function(s)
+      return s.ahead > 0
+    end,
+    label = function(s)
+      return "push " .. plural(s.ahead, "commit")
+    end,
+    run = function()
+      vim.cmd.Git("push")
+    end,
+  },
+  {
+    key = "u",
+    when = function(s)
+      return s.behind > 0
+    end,
+    label = function(s)
+      return "pull " .. plural(s.behind, "commit")
+    end,
+    run = function()
+      vim.cmd.Git("pull")
+    end,
+  },
+  {
+    key = "x",
+    when = function(s)
+      return s.stashes > 0
+    end,
+    -- Naming the stash makes popping it a decision rather than a gamble.
+    label = function(s)
+      return s.stash_top and ("pop stash: " .. s.stash_top) or ("pop " .. plural(s.stashes, "stash"))
+    end,
+    run = function()
+      vim.cmd.Git("stash pop")
+    end,
+  },
+  {
+    key = "f",
+    label = "find file",
+    run = function()
+      Snacks.picker.smart()
+    end,
+  },
+  {
+    key = "/",
+    label = "grep",
+    run = function()
+      Snacks.picker.grep()
+    end,
+  },
+  {
+    key = "g",
+    label = "lazygit",
+    run = function()
+      require("config.git").lazygit()
+    end,
+  },
+}
+
+---@param s SlimRepo
+---@return SlimAction[]
+local function available(s)
+  return vim.tbl_filter(function(action)
+    return action.when == nil or action.when(s)
+  end, ACTIONS)
+end
+
+---Where am I -- the one line of information the cockpit keeps, in place of
+---mini.starter's time-of-day greeting (which told us what a clock already does).
+---@return string
+local function header()
+  local s = repo_state()
+  if not s.root then
+    return vim.fn.fnamemodify(vim.uv.cwd() or "", ":~")
+  end
+  local parts = { vim.fs.basename(s.root), s.branch or "detached" }
+  if s.ahead > 0 then
+    parts[#parts + 1] = "󰜷 " .. s.ahead
+  end
+  if s.behind > 0 then
+    parts[#parts + 1] = "󰜮 " .. s.behind
+  end
+  if s.conflicts > 0 then
+    parts[#parts + 1] = "󰀦 " .. plural(s.conflicts, "conflict")
+  end
+  -- "clean" only when there is genuinely nothing outstanding: conflicts are
+  -- counted apart from `dirty`, so a purely conflicted tree has dirty == 0.
+  if s.dirty > 0 then
+    parts[#parts + 1] = plural(s.dirty, "change")
+  elseif s.conflicts == 0 then
+    parts[#parts + 1] = "clean"
+  end
+  return table.concat(parts, "  ")
+end
+
+---The section is unnamed, so mini.starter emits a blank line where the section
+---header would have gone -- collapse runs of blanks so the key grid sits
+---directly under the state line instead of drifting down the screen.
+---@param content table[][] mini.starter content: lines of units
+---@return table[][]
+local function collapse_blanks(content)
+  local out, prev_blank = {}, false
+  for _, line in ipairs(content) do
+    local text = table.concat(vim.tbl_map(function(unit)
+      return unit.string
+    end, line))
+    local blank = text:match("^%s*$") ~= nil
+    if not (blank and prev_blank) then
+      out[#out + 1] = line
+    end
+    prev_blank = blank
+  end
+  return out
 end
 
 local starter = require("mini.starter")
 starter.setup({
+  header = header,
+  -- A table of generators, not a bare function -- mini.starter type-checks it.
   items = {
-    persistence_sessions(5),
-    starter.sections.recent_files(5, false, false),
-    starter.sections.builtin_actions(),
+    function()
+      local s = repo_state()
+      return vim.tbl_map(function(action)
+        return {
+          name = ("%s   %s"):format(action.key, type(action.label) == "function" and action.label(s) or action.label),
+          -- A single unnamed section: the actions are already grouped by the
+          -- order they're declared in, and headers would only add lines to scan.
+          section = "",
+          action = function()
+            action.run(s)
+          end,
+        }
+      end, available(s))
+    end,
   },
+  footer = "⏎  run      q  quit",
+  -- No bullets: this is a key grid, not a list. `aligning` is otherwise the
+  -- default hook pair, minus `adding_bullet`.
+  content_hooks = { collapse_blanks, starter.gen_hook.aligning("center", "center") },
+  -- Type-to-filter is what the default dashboard uses to reach an item, but
+  -- here every item already *is* a key -- leaving it on would mean a keypress
+  -- both ran an action and started a query.
+  query_updaters = "",
 })
 
--- One-key `s` restores the cwd session (mini.starter is otherwise type-to-filter).
+-- The single-key bindings, from the same table that drew the screen -- so a key
+-- can never be live while its action is invisible, or vice versa. Keys whose
+-- action isn't currently valid are simply unmapped and do nothing.
 vim.api.nvim_create_autocmd("User", {
   pattern = "MiniStarterOpened",
   callback = function(args)
-    vim.keymap.set("n", "s", function()
-      require("persistence").load()
-    end, { buffer = args.buf, desc = "Restore Session" })
+    local s = repo_state()
+    for _, action in ipairs(available(s)) do
+      vim.keymap.set("n", action.key, function()
+        action.run(s)
+      end, {
+        buffer = args.buf,
+        desc = type(action.label) == "function" and action.label(s) or action.label,
+      })
+    end
+    vim.keymap.set("n", "q", "<cmd>qa<cr>", { buffer = args.buf, desc = "Quit" })
   end,
 })
 
