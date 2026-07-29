@@ -25,7 +25,12 @@ install_homebrew() {
 install_oh_my_zsh() {
 	if [[ ! -f ~/.zshrc ]]; then
 		info "Installing oh my zsh..."
-		ZSH=~/.oh-my-zsh ZSH_DISABLE_COMPFIX=true sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+		# RUNZSH=no: the installer ends with `exec zsh -l` by default, which parks
+		# this install inside a nested login shell until you type `exit`. CHSH is
+		# left at its default (yes) so the installer still sets zsh as the login
+		# shell; `ensure_default_shell` below covers the case where this whole
+		# block is skipped because ~/.zshrc already exists.
+		ZSH=~/.oh-my-zsh ZSH_DISABLE_COMPFIX=true RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 		chmod 744 ~/.oh-my-zsh/oh-my-zsh.sh
 	else
 		warn "oh-my-zsh already installed"
@@ -77,6 +82,183 @@ install_brew_casks() {
 			brew install --cask "$cask"
 		fi
 	done
+}
+
+# Wire the stowed shared shell config into the machine-local files that source it.
+#
+# The split is deliberate: `~/.zshrc` and `~/.aliases` stay machine-local (PATH
+# entries, per-box tweaks) and are NOT stowed, while `.zshrc.shared` and
+# `.aliases.shared` are symlinks into this repo. Nothing sources the shared
+# files automatically, so without this step a fresh machine ends up with the
+# stowed files present but never loaded -- no p10k theme, no aliases, no
+# LG_CONFIG_FILE.
+#
+# Both branches are idempotent: an existing file that already sources its shared
+# half is left completely alone.
+ensure_shell_bootstrap() {
+	local rc="$HOME/.zshrc"
+	if [ ! -f "$rc" ]; then
+		info "Creating $rc (machine-local, sources .zshrc.shared)"
+		cat >"$rc" <<-'EOF'
+			# Machine-specific configuration
+			# Add any machine-specific environment variables, paths, or settings here
+
+			# Source shared dotfiles configuration
+			[ -f ~/.zshrc.shared ] && source ~/.zshrc.shared
+		EOF
+	elif grep -q "zshrc.shared" "$rc"; then
+		warn "$rc already sources .zshrc.shared"
+	else
+		info "Appending .zshrc.shared source line to existing $rc"
+		printf '\n# Source shared dotfiles configuration\n[ -f ~/.zshrc.shared ] && source ~/.zshrc.shared\n' >>"$rc"
+		# .zshrc.shared sets ZSH_THEME and sources oh-my-zsh.sh itself, so if the
+		# file we just appended to is oh-my-zsh's stock template, oh-my-zsh gets
+		# loaded twice. Harmless but wasteful -- the stock body can be trimmed.
+		warn "If $rc is oh-my-zsh's stock template, trim its body: .zshrc.shared loads oh-my-zsh itself"
+	fi
+
+	local aliases="$HOME/.aliases"
+	if [ ! -f "$aliases" ]; then
+		info "Creating $aliases (machine-local, sources .aliases.shared)"
+		cat >"$aliases" <<-'EOF'
+			# Machine-specific aliases
+			# Add any machine-specific aliases or functions here
+
+			# Source shared aliases
+			[ -f ~/.aliases.shared ] && source ~/.aliases.shared
+		EOF
+	elif grep -q "aliases.shared" "$aliases"; then
+		warn "$aliases already sources .aliases.shared"
+	else
+		info "Appending .aliases.shared source line to existing $aliases"
+		printf '\n# Source shared aliases\n[ -f ~/.aliases.shared ] && source ~/.aliases.shared\n' >>"$aliases"
+	fi
+}
+
+# Make zsh the login shell.
+#
+# Usually a no-op: macOS ships zsh as the default, and oh-my-zsh's installer
+# runs chsh itself. It matters when `install_oh_my_zsh` short-circuits because
+# ~/.zshrc already exists -- then nothing else would ever change the shell, and
+# everything in .zshrc.shared silently never loads on login.
+#
+# Any zsh counts as satisfied. Deliberately not upgrading /bin/zsh to a
+# Homebrew zsh: that would mean editing /etc/shells for no real benefit.
+ensure_default_shell() {
+	# Prefer the system zsh on macOS: it's already in /etc/shells, whereas a
+	# Homebrew zsh (which `command -v` would find first) would need adding.
+	local zsh_path
+	if is_macos && [ -x /bin/zsh ]; then
+		zsh_path="/bin/zsh"
+	elif ! zsh_path="$(command -v zsh)"; then
+		err "zsh is not installed - cannot set it as the login shell"
+		return 1
+	fi
+
+	# The *login* shell from the user database, not $SHELL (which only reflects
+	# the current process and would report zsh inside any zsh subshell).
+	local current=""
+	if command -v getent &>/dev/null; then
+		current="$(getent passwd "$USER" | cut -d: -f7)"
+	elif is_macos; then
+		current="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+	fi
+	current="${current:-$SHELL}"
+
+	if [ "$(basename "$current")" = "zsh" ]; then
+		warn "Login shell is already zsh ($current)"
+		return 0
+	fi
+
+	# chsh refuses any shell that isn't listed in /etc/shells.
+	if ! grep -qx "$zsh_path" /etc/shells 2>/dev/null; then
+		info "Adding $zsh_path to /etc/shells (requires sudo)"
+		if ! echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null; then
+			err "Could not add $zsh_path to /etc/shells"
+			return 1
+		fi
+	fi
+
+	info "Changing login shell from $current to $zsh_path..."
+	if sudo -n true 2>/dev/null; then
+		sudo chsh -s "$zsh_path" "$USER" || { err "chsh failed - run: chsh -s $zsh_path"; return 1; }
+	else
+		# Prompts for the *user's* password, not sudo's.
+		chsh -s "$zsh_path" || { err "chsh failed - run: chsh -s $zsh_path"; return 1; }
+	fi
+
+	success "Login shell set to $zsh_path (takes effect on next login)"
+}
+
+# Install the Nerd Font the terminal configs assume.
+#
+# macOS gets it as a Homebrew cask. Linux downloads the same font from the Nerd
+# Fonts release into the user font dir -- no sudo, no package manager.
+#
+# Worth knowing what this does *not* fix: the Linux framebuffer console
+# (TERM=linux) loads PSF fonts via setfont/console-setup, which are capped at
+# 512 glyphs, so Nerd Font icons can never render there no matter what is
+# installed. This only helps GUI/desktop terminals. `.zshrc.shared` handles the
+# console case by falling back to POWERLEVEL9K_MODE=ascii.
+install_nerd_font() {
+	if is_macos; then
+		install_brew_casks "$@"
+		return $?
+	fi
+
+	# The Nerd Fonts release asset matching the macOS cask. Pinned rather than
+	# tracking `latest` so a new machine gets the same font version as the others.
+	local nerd_font_version="v3.4.0"
+	local nerd_font_archive="IBMPlexMono.tar.xz"
+
+	# fontconfig is what makes a font in ~/.local/share/fonts discoverable. On a
+	# headless server it's often absent -- and without a GUI there's nothing to
+	# render the font anyway, so skip rather than pull in dependencies.
+	if ! command -v fc-cache &>/dev/null; then
+		warn "fontconfig (fc-cache) not found - skipping font install"
+		info "Nothing renders fonts server-side over SSH; your client's font is what matters"
+		return 0
+	fi
+
+	local font_dir="$HOME/.local/share/fonts/BlexMonoNerdFont"
+	if [ -d "$font_dir" ] && [ -n "$(find "$font_dir" -name '*.ttf' -print -quit 2>/dev/null)" ]; then
+		warn "Nerd Font already installed at $font_dir"
+		return 0
+	fi
+
+	if ! command -v tar &>/dev/null || ! command -v xz &>/dev/null; then
+		err "tar with xz support is required to unpack $nerd_font_archive (try: apt-get install xz-utils)"
+		return 1
+	fi
+
+	local url="https://github.com/ryanoasis/nerd-fonts/releases/download/${nerd_font_version}/${nerd_font_archive}"
+	local tmp_archive
+	tmp_archive="$(mktemp -t nerdfont.XXXXXX.tar.xz)"
+
+	info "Downloading ${nerd_font_archive} (${nerd_font_version})..."
+	if ! curl -fsSL "$url" -o "$tmp_archive"; then
+		err "Failed to download $url"
+		rm -f "$tmp_archive"
+		return 1
+	fi
+
+	mkdir -p "$font_dir"
+	info "Unpacking into $font_dir..."
+	if ! tar -xJf "$tmp_archive" -C "$font_dir"; then
+		err "Failed to unpack $tmp_archive"
+		rm -f "$tmp_archive"
+		return 1
+	fi
+	rm -f "$tmp_archive"
+
+	info "Rebuilding font cache..."
+	fc-cache -f "$font_dir" >/dev/null
+
+	if fc-list | grep -qi "blexmono"; then
+		success "BlexMono Nerd Font installed"
+	else
+		warn "Font unpacked but fontconfig doesn't list it - check $font_dir"
+	fi
 }
 
 install_masApps() {

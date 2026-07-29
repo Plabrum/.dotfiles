@@ -109,6 +109,9 @@ main() {
     # 3. Minimal CLI packages (always installed)
     run_installer "Homebrew Packages" install_brew_packages "${brew_packages_minimal[@]}"
 
+    # 3b. Nerd Font (both platforms, both profiles - terminal configs assume it)
+    run_installer "Nerd Font" install_nerd_font "${brew_fonts_macos[@]}"
+
     # 4. Full-profile extras (macOS GUI bundle)
     if [ "$INSTALL_PROFILE" = "full" ]; then
         if is_macos; then
@@ -133,6 +136,12 @@ main() {
     else
         warn "Skipping stow - run from $REPO_PATH after cloning"
     fi
+
+    # 6b. Point the machine-local shell files at the freshly stowed shared ones
+    run_installer "Shell Bootstrap" ensure_shell_bootstrap
+
+    # 6c. Make sure zsh is actually the login shell (no-op if oh-my-zsh did it)
+    run_installer "Default Shell" ensure_default_shell
 
     # 7. macOS-only GUI extras: Neovim.app + file associations
     if [ "$INSTALL_PROFILE" = "full" ] && is_macos; then

@@ -13,7 +13,6 @@ export brew_packages_minimal=(
   ripgrep
   fd
   jq
-  font-blex-mono-nerd-font
   zsh-syntax-highlighting
   # Dev tooling
   python3
@@ -29,6 +28,15 @@ export brew_packages_minimal=(
   awscli
   postgresql
   fortune
+)
+
+# Nerd Font, installed for every profile -- the terminal configs in this repo
+# assume its glyphs. Kept out of `brew_packages_minimal` because it's a *cask*:
+# `brew install` auto-detects that on macOS, but Homebrew on Linux has no cask
+# support at all, so a plain formula-style install errors out there. Linux gets
+# the same font from the Nerd Fonts release instead (`install_nerd_font`).
+export brew_fonts_macos=(
+  font-blex-mono-nerd-font
 )
 
 # macOS-only CLI packages installed only with the `full` profile.

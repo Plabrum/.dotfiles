@@ -123,6 +123,14 @@ export TZ="America/New_York"
 # Powerlevel10k configuration
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
+# .p10k.zsh sets POWERLEVEL9K_MODE=nerdfont-v3, which is right for any terminal
+# emulator but wrong on a physical Linux console: TERM=linux means the kernel
+# framebuffer renders a PSF font, and PSF is capped at 512 glyphs, so Nerd Font
+# icons come out as tofu boxes. No installed font can fix that, so drop to the
+# ASCII glyph set there. Must come *after* the source above to take effect.
+# (Irrelevant over SSH -- then TERM comes from the client, which has the font.)
+[[ $TERM == linux ]] && POWERLEVEL9K_MODE=ascii
+
 export EDITOR="nvim"
 export VISUAL="nvim"
 

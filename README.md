@@ -1,19 +1,38 @@
 # .dotfiles
 
-Personal macOS development environment setup and configuration.
+Personal development environment setup and configuration. macOS is the primary
+target; Linux (Debian/Ubuntu, RedHat/Fedora) is supported for the CLI half.
 
 ## Quick Setup (New Machine)
 
-On a fresh Mac, run this single command:
+On a fresh machine, run this single command:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/plabrum/.dotfiles/main/bootstrap.sh)
 ```
 
 This will:
-1. Install Xcode Command Line Tools
+1. Install Xcode Command Line Tools (macOS) or build prerequisites (Linux)
 2. Clone this repository to `~/.dotfiles`
 3. Run the full installation process
+
+### Install profiles
+
+`install.sh` asks for a profile, or takes `INSTALL_PROFILE` non-interactively:
+
+- **minimal** (default) — CLI-only dev environment. All platforms.
+- **full** — adds GUI apps, Mac App Store apps, Neovim.app and file
+  associations. macOS only; the GUI steps skip themselves on Linux.
+
+```bash
+INSTALL_PROFILE=minimal ./install.sh   # no prompt
+```
+
+The profile also decides how much gets stowed: **full** on macOS stows *every*
+package, anything else stows only `DEFAULT_PACKAGES` (see below).
+
+Each step prompts individually, so you can decline Homebrew, GitHub auth, or
+anything else and still get the rest.
 
 ## What Gets Installed
 
@@ -28,7 +47,11 @@ This will:
 - ripgrep, fzf, jq, shellcheck, shfmt
 - GNU Stow (for dotfiles management)
 
-### Applications
+### Fonts
+- BlexMono Nerd Font (IBM Plex Mono, patched) — a Homebrew cask on macOS, and
+  fetched from the Nerd Fonts release into `~/.local/share/fonts` on Linux
+
+### Applications (`full` profile, macOS)
 - Docker, Ghostty
 - 1Password, Magnet
 - Alfred, Karabiner Elements
@@ -36,15 +59,18 @@ This will:
 - And more (see `scripts/packages.sh`)
 
 ### Configurations
-- Neovim config (with LSP, formatters, linters)
+- Neovim config (with LSP, formatters, linters) — plus a separate LazyVim config
 - Tmux config
-- Zsh config with aliases
+- Zsh config with aliases (plus p10k prompt)
+- lazygit config (branch prefix, Graphite custom commands)
 - Karabiner Elements key mappings
 - Ghostty terminal settings
 
 ### Custom Setup
-- "Open in Neovim" app for file associations
-- File type associations for code files
+- Machine-local `~/.zshrc` / `~/.aliases` wired to the shared config
+- zsh set as the login shell
+- "Open in Neovim" app for file associations (macOS)
+- File type associations for code files (macOS)
 - GitHub authentication via `gh` CLI (auto-generates SSH keys)
 
 ## Manual Setup (Already Cloned)
@@ -63,17 +89,25 @@ The installer will prompt you for each section (Homebrew, packages, etc.) - you 
 Dotfiles are organized into separate packages that can be independently stowed/unstowed.
 
 ### Available Packages
-- `zsh` - Shell configuration (`.zshrc.shared`, `.aliases`)
+- `zsh` - Shell configuration (`.zshrc.shared`, `.aliases.shared`)
 - `p10k` - Powerlevel10k theme configuration
-- `nvim` - Neovim configuration
+- `nvim` - Neovim configuration (the hand-rolled "slim" config; plain `nvim`)
+- `nvim-lazyvim` - LazyVim configuration (`nviml`, via `NVIM_APPNAME`)
 - `tmux` - Tmux configuration
 - `ghostty` - Ghostty terminal configuration
 - `karabiner` - Karabiner Elements key mappings
+- `lazygit` - lazygit config (branch prefix, Graphite custom commands)
+- `claude` - Claude Code skills
 - `bin` - Custom scripts in `.local/bin`
+
+Packages in `DEFAULT_PACKAGES` (stowed when no arguments are given): `zsh`,
+`p10k`, `nvim`, `tmux`, `bin`, `claude`, `lazygit`. The rest — `nvim-lazyvim`,
+`ghostty`, `karabiner` — need `--all` or an explicit name, so a Linux or minimal
+install doesn't get macOS-only GUI configs.
 
 ### Stow your configs
 
-Stow default packages (zsh, nvim, tmux, bin):
+Stow default packages:
 ```bash
 ./scripts/stow.sh
 ```
@@ -98,39 +132,101 @@ List available packages:
 ./scripts/unstow.sh
 ```
 
+### Re-syncing after changes
+
+`scripts/stow.sh` uses `stow -R` (restow), so it's idempotent — re-run it any
+time to sync:
+
+```bash
+./scripts/stow.sh --all
+```
+
+Most packages are stowed as a *single directory symlink* (`~/.config/nvim`,
+`~/.config/tmux`, `~/.config/lazygit`, …), so **editing or adding files inside
+them needs no restow** — the changes are live immediately.
+
+The exception is `bin`: `~/.local/bin` already exists as a real directory, so
+stow links each file individually. **Adding a new script to `bin/` requires
+`./scripts/stow.sh bin`** or it won't appear on your PATH. Restowing also clears
+symlinks left behind by deleted files.
+
 ### Per-Machine Setup for .zshrc
 
-The stow process creates `~/.zshrc.shared` with your shared configuration. On each machine, create a local `~/.zshrc` that sources it:
+`~/.zshrc` and `~/.aliases` are deliberately **not** stowed — they're
+machine-local (PATH entries, per-box env) and each sources its shared half from
+this repo. `install.sh` wires this up for you (`ensure_shell_bootstrap`):
+creating them if missing, appending the source line if the file exists without
+it, and doing nothing if it's already there.
+
+To do it by hand:
 
 ```bash
 # ~/.zshrc - Machine-specific configuration
-# Add any machine-specific environment variables, paths, or settings here
 export SOME_MACHINE_SPECIFIC_VAR="value"
 
 # Source shared dotfiles configuration
 [ -f ~/.zshrc.shared ] && source ~/.zshrc.shared
 ```
 
-This approach allows each machine to have its own customizations while sharing common configuration.
+```bash
+# ~/.aliases - Machine-specific aliases
+
+# Source shared aliases
+[ -f ~/.aliases.shared ] && source ~/.aliases.shared
+```
+
+Without these, the stowed files exist but are never loaded — no p10k theme, no
+aliases, no `LG_CONFIG_FILE`.
 
 ### Update packages list
 Edit `scripts/packages.sh` to add/remove:
-- `brew_apps` - GUI applications
-- `brew_packages` - CLI tools
-- `mas_apps` - Mac App Store apps
+- `brew_packages_minimal` - CLI tools, every platform and profile
+- `brew_fonts_macos` - Nerd Font casks (macOS; Linux fetches the font from the
+  Nerd Fonts release instead — casks don't exist on Homebrew for Linux)
+- `brew_packages_macos_full` - macOS-only CLI tools, `full` profile
+- `brew_apps_full` - GUI applications (Homebrew Casks), `full` profile
+- `mas_apps_full` - Mac App Store apps, `full` profile
 
 ### Add new dotfiles
 1. Add files to the appropriate package directory (e.g., `zsh/`, `nvim/`, etc.)
 2. Run `./scripts/stow.sh <package>` to create symlinks
 
+## Linux / server notes
+
+The `minimal` profile is the intended path on a Linux box:
+
+```bash
+cd ~/.dotfiles && INSTALL_PROFILE=minimal ./install.sh
+```
+
+- **zsh** comes from the native package manager (`apt`/`dnf`), not Homebrew, so
+  login features aren't broken. It's installed with the build prerequisites in
+  step 1. Homebrew still gets installed (to `/home/linuxbrew`) for everything
+  else, and needs `sudo`.
+- **Login shell**: oh-my-zsh's installer runs `chsh` itself, and step 6c
+  (`ensure_default_shell`) covers the case where oh-my-zsh is skipped because
+  `~/.zshrc` already exists. Takes effect on next login.
+- **GUI steps** (casks, Mac App Store, Neovim.app, Karabiner) skip themselves.
+- **Nerd Font**: on Linux the font is fetched from the Nerd Fonts release into
+  `~/.local/share/fonts`, and skipped entirely if `fontconfig` is absent — over
+  SSH the font that matters is your *client's*, not the server's.
+- **Physical console**: on tty1 (`TERM=linux`) the kernel renders a PSF font,
+  which is capped at 512 glyphs, so Nerd Font icons can't display there no
+  matter what is installed. `.zshrc.shared` detects this and falls back to
+  `POWERLEVEL9K_MODE=ascii`, so the prompt degrades cleanly instead of showing
+  boxes. SSH sessions are unaffected.
+
 ## Scripts
 
-- `bootstrap.sh` - Initial setup on a fresh Mac
-- `install.sh` - Main installation script
+- `bootstrap.sh` - Initial setup on a fresh machine (installs prereqs, clones, installs)
+- `install.sh` - Main installation script; orchestrates the steps below
+- `scripts/packages.sh` - Package lists (see "Update packages list")
+- `scripts/terminal.sh` - Homebrew, oh-my-zsh, fonts, shell bootstrap, login shell
+- `scripts/linux-prerequisites.sh` - Build tools + zsh via apt/dnf/yum
 - `scripts/stow.sh` - Symlink dotfiles to home directory
 - `scripts/unstow.sh` - Remove dotfile symlinks
-- `scripts/create-neovim-app.sh` - Create "Open in Neovim" app
-- `scripts/reset-xcode-file-associations.sh` - Set file type associations
+- `scripts/create-neovim-app.sh` - Create "Open in Neovim" app (macOS)
+- `scripts/reset-xcode-file-associations.sh` - Set file type associations (macOS)
 
 ## Credits
 
