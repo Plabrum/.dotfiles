@@ -103,6 +103,14 @@ main() {
         run_installer "Build Prerequisites" install_build_prerequisites
     fi
 
+    # 1b. Linux: CLI tools + Neovim from native sources, before Homebrew. These
+    # are the tools the stowed configs actually need, and getting them here means
+    # a Homebrew hiccup later doesn't leave the box without them.
+    if is_linux; then
+        run_installer "Linux CLI Tools" install_linux_cli_tools
+        run_installer "Neovim (latest release)" install_neovim_linux
+    fi
+
     # 2. Homebrew (works on both platforms)
     run_installer "Homebrew" install_homebrew
 

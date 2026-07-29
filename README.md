@@ -31,8 +31,11 @@ INSTALL_PROFILE=minimal ./install.sh   # no prompt
 The profile also decides how much gets stowed: **full** on macOS stows *every*
 package, anything else stows only `DEFAULT_PACKAGES` (see below).
 
-Each step prompts individually, so you can decline Homebrew, GitHub auth, or
-anything else and still get the rest.
+Note that steps do **not** prompt individually — once started, `install.sh` runs
+every step for the chosen profile in order (Homebrew, packages, oh-my-zsh, stow,
+shell setup, `gh auth login`). The only questions asked are the profile itself,
+stow's conflict prompt, `sudo`, and whatever `gh auth login` needs. To run just
+part of it, call the pieces directly — see "Syncing an existing machine".
 
 ## What Gets Installed
 
@@ -82,7 +85,27 @@ cd ~/.dotfiles
 ./install.sh
 ```
 
-The installer will prompt you for each section (Homebrew, packages, etc.) - you can skip sections you don't need.
+The installer asks for a profile, then runs every step for it start to finish —
+it does *not* offer a yes/no per section.
+
+## Syncing an existing machine
+
+To pull config changes without re-running the installers:
+
+```bash
+cd ~/.dotfiles && git pull
+./scripts/stow.sh --all                 # or omit --all for DEFAULT_PACKAGES
+```
+
+If the changes touched shell bootstrapping or the login shell, run those two
+steps on their own instead of the whole installer:
+
+```bash
+bash -c 'source scripts/utils.sh && source scripts/terminal.sh &&
+         ensure_shell_bootstrap && ensure_default_shell'
+```
+
+Then start a new login shell (`exec zsh -l`) to pick everything up.
 
 ## Managing Dotfiles
 

@@ -37,15 +37,15 @@ install_oh_my_zsh() {
 	fi
 
 	# Install powerlevel10k theme
-	if [[ ! -d "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k" ]]; then
+	if [[ ! -d "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k" ]]; then
 		info "Installing powerlevel10k theme..."
-		git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k"
+		git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k"
 	fi
 
 	# Install custom plugins
-	if [[ ! -d "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting" ]]; then
+	if [[ ! -d "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting" ]]; then
 		info "Installing zsh-syntax-highlighting plugin..."
-		git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
+		git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
 	fi
 }
 
@@ -132,6 +132,91 @@ ensure_shell_bootstrap() {
 	else
 		info "Appending .aliases.shared source line to existing $aliases"
 		printf '\n# Source shared aliases\n[ -f ~/.aliases.shared ] && source ~/.aliases.shared\n' >>"$aliases"
+	fi
+}
+
+# Install (or upgrade to) the latest Neovim release on Linux.
+#
+# Needed because `nvim/.config/nvim/init.lua` requires Neovim >= 0.12 for
+# `vim.pack`, and distro packages lag well behind that -- Ubuntu ships 0.9/0.10,
+# so an apt-installed nvim loads the config only to bail out with an error.
+#
+# Always tracks the newest release rather than a pinned version: the tag is
+# resolved from GitHub's `releases/latest` redirect at run time, compared against
+# whatever nvim is on PATH, and skipped when they already match. That also means
+# a Homebrew-installed nvim of the same version is left alone.
+#
+# Unpacks into ~/.local (already on PATH via the `bin` package) - no sudo.
+install_neovim_linux() {
+	if is_macos; then
+		info "Skipping - macOS gets neovim from Homebrew"
+		return 0
+	fi
+
+	local arch asset
+	arch="$(uname -m)"
+	case "$arch" in
+		x86_64 | amd64) asset="nvim-linux-x86_64.tar.gz" ;;
+		aarch64 | arm64) asset="nvim-linux-arm64.tar.gz" ;;
+		*)
+			err "No Neovim release build for architecture '$arch'"
+			return 1
+			;;
+	esac
+
+	# Follow the /releases/latest redirect to learn the tag without needing jq.
+	local latest
+	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+		https://github.com/neovim/neovim/releases/latest | sed 's|.*/tag/||')"
+	if [ -z "$latest" ]; then
+		err "Could not determine the latest Neovim release"
+		return 1
+	fi
+
+	local current=""
+	if command -v nvim &>/dev/null; then
+		# `nvim --version` line 1 looks like: NVIM v0.12.4
+		current="$(nvim --version | head -1 | awk '{print $2}')"
+	fi
+
+	if [ "$current" = "$latest" ]; then
+		warn "Neovim $current is already the latest release"
+		return 0
+	fi
+
+	if [ -n "$current" ]; then
+		info "Upgrading Neovim $current -> $latest..."
+	else
+		info "Installing Neovim $latest..."
+	fi
+
+	local tmp_archive
+	# Plain `mktemp`: a template like `nvim.XXXXXX.tar.gz` leaves the literal Xs in
+	# the name on BSD/macOS and errors on GNU, which wants the Xs last. tar reads
+	# the format from the content, so the filename does not matter.
+	tmp_archive="$(mktemp)"
+	if ! curl -fsSL "https://github.com/neovim/neovim/releases/download/${latest}/${asset}" -o "$tmp_archive"; then
+		err "Failed to download Neovim $latest ($asset)"
+		rm -f "$tmp_archive"
+		return 1
+	fi
+
+	# The tarball's top-level dir is the release name; strip it so bin/, lib/ and
+	# share/ land directly in ~/.local.
+	mkdir -p "$HOME/.local"
+	if ! tar -xzf "$tmp_archive" -C "$HOME/.local" --strip-components=1; then
+		err "Failed to unpack $tmp_archive"
+		rm -f "$tmp_archive"
+		return 1
+	fi
+	rm -f "$tmp_archive"
+
+	local installed
+	installed="$("$HOME/.local/bin/nvim" --version | head -1 | awk '{print $2}')"
+	if [ "$installed" = "$latest" ]; then
+		success "Neovim $installed installed to $HOME/.local"
+	else
+		warn "Installed Neovim reports $installed, expected $latest"
 	fi
 }
 
@@ -233,7 +318,7 @@ install_nerd_font() {
 
 	local url="https://github.com/ryanoasis/nerd-fonts/releases/download/${nerd_font_version}/${nerd_font_archive}"
 	local tmp_archive
-	tmp_archive="$(mktemp -t nerdfont.XXXXXX.tar.xz)"
+	tmp_archive="$(mktemp)"
 
 	info "Downloading ${nerd_font_archive} (${nerd_font_version})..."
 	if ! curl -fsSL "$url" -o "$tmp_archive"; then
