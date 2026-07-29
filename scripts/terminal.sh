@@ -25,11 +25,8 @@ install_homebrew() {
 install_oh_my_zsh() {
 	if [[ ! -f ~/.zshrc ]]; then
 		info "Installing oh my zsh..."
-		# RUNZSH=no: the installer ends with `exec zsh -l` by default, which parks
-		# this install inside a nested login shell until you type `exit`. CHSH is
-		# left at its default (yes) so the installer still sets zsh as the login
-		# shell; `ensure_default_shell` below covers the case where this whole
-		# block is skipped because ~/.zshrc already exists.
+		# RUNZSH=no: the installer otherwise ends with `exec zsh -l` and parks the
+		# install in a nested shell. CHSH stays on so it still sets the login shell.
 		ZSH=~/.oh-my-zsh ZSH_DISABLE_COMPFIX=true RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 		chmod 744 ~/.oh-my-zsh/oh-my-zsh.sh
 	else
@@ -84,17 +81,8 @@ install_brew_casks() {
 	done
 }
 
-# Wire the stowed shared shell config into the machine-local files that source it.
-#
-# The split is deliberate: `~/.zshrc` and `~/.aliases` stay machine-local (PATH
-# entries, per-box tweaks) and are NOT stowed, while `.zshrc.shared` and
-# `.aliases.shared` are symlinks into this repo. Nothing sources the shared
-# files automatically, so without this step a fresh machine ends up with the
-# stowed files present but never loaded -- no p10k theme, no aliases, no
-# LG_CONFIG_FILE.
-#
-# Both branches are idempotent: an existing file that already sources its shared
-# half is left completely alone.
+# Create ~/.zshrc and ~/.aliases (machine-local, not stowed) sourcing their
+# .shared halves from this repo. Idempotent.
 ensure_shell_bootstrap() {
 	local rc="$HOME/.zshrc"
 	if [ ! -f "$rc" ]; then
@@ -111,9 +99,8 @@ ensure_shell_bootstrap() {
 	else
 		info "Appending .zshrc.shared source line to existing $rc"
 		printf '\n# Source shared dotfiles configuration\n[ -f ~/.zshrc.shared ] && source ~/.zshrc.shared\n' >>"$rc"
-		# .zshrc.shared sets ZSH_THEME and sources oh-my-zsh.sh itself, so if the
-		# file we just appended to is oh-my-zsh's stock template, oh-my-zsh gets
-		# loaded twice. Harmless but wasteful -- the stock body can be trimmed.
+		# .zshrc.shared loads oh-my-zsh itself, so appending to the stock template
+		# loads it twice.
 		warn "If $rc is oh-my-zsh's stock template, trim its body: .zshrc.shared loads oh-my-zsh itself"
 	fi
 
@@ -135,18 +122,8 @@ ensure_shell_bootstrap() {
 	fi
 }
 
-# Install (or upgrade to) the latest Neovim release on Linux.
-#
-# Needed because `nvim/.config/nvim/init.lua` requires Neovim >= 0.12 for
-# `vim.pack`, and distro packages lag well behind that -- Ubuntu ships 0.9/0.10,
-# so an apt-installed nvim loads the config only to bail out with an error.
-#
-# Always tracks the newest release rather than a pinned version: the tag is
-# resolved from GitHub's `releases/latest` redirect at run time, compared against
-# whatever nvim is on PATH, and skipped when they already match. That also means
-# a Homebrew-installed nvim of the same version is left alone.
-#
-# Unpacks into ~/.local (already on PATH via the `bin` package) - no sudo.
+# Install/upgrade Neovim from the latest GitHub release into ~/.local (no sudo).
+# The slim config needs >= 0.12 for vim.pack; distro packages are older.
 install_neovim_linux() {
 	if is_macos; then
 		info "Skipping - macOS gets neovim from Homebrew"
@@ -164,7 +141,7 @@ install_neovim_linux() {
 			;;
 	esac
 
-	# Follow the /releases/latest redirect to learn the tag without needing jq.
+	# /releases/latest redirects to the tagged release; avoids needing jq.
 	local latest
 	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
 		https://github.com/neovim/neovim/releases/latest | sed 's|.*/tag/||')"
@@ -191,9 +168,6 @@ install_neovim_linux() {
 	fi
 
 	local tmp_archive
-	# Plain `mktemp`: a template like `nvim.XXXXXX.tar.gz` leaves the literal Xs in
-	# the name on BSD/macOS and errors on GNU, which wants the Xs last. tar reads
-	# the format from the content, so the filename does not matter.
 	tmp_archive="$(mktemp)"
 	if ! curl -fsSL "https://github.com/neovim/neovim/releases/download/${latest}/${asset}" -o "$tmp_archive"; then
 		err "Failed to download Neovim $latest ($asset)"
@@ -201,8 +175,7 @@ install_neovim_linux() {
 		return 1
 	fi
 
-	# The tarball's top-level dir is the release name; strip it so bin/, lib/ and
-	# share/ land directly in ~/.local.
+	# Strip the release-name top-level dir.
 	mkdir -p "$HOME/.local"
 	if ! tar -xzf "$tmp_archive" -C "$HOME/.local" --strip-components=1; then
 		err "Failed to unpack $tmp_archive"
@@ -220,16 +193,8 @@ install_neovim_linux() {
 	fi
 }
 
-# Install (or upgrade to) the latest tree-sitter CLI on Linux.
-#
-# nvim-treesitter's `main` branch shells out to the `tree-sitter` binary to build
-# parsers; without it every parser fails with "ENOENT ... 'tree-sitter'" -- one
-# error message per parser, each of which becomes a hit-enter prompt on first
-# launch. macOS gets it from the `tree-sitter` Homebrew formula.
-#
-# Same approach as install_neovim_linux: resolve the newest tag at run time,
-# compare with what's installed, unpack into ~/.local/bin. The release ships the
-# binary as a bare gzip, not a tarball.
+# Install/upgrade the tree-sitter CLI into ~/.local/bin. nvim-treesitter's main
+# branch shells out to it to build parsers. macOS gets it from Homebrew.
 install_treesitter_cli_linux() {
 	if is_macos; then
 		info "Skipping - macOS gets tree-sitter from Homebrew"
@@ -272,35 +237,45 @@ install_treesitter_cli_linux() {
 		info "Installing tree-sitter $latest..."
 	fi
 
-	local tmp_gz
-	tmp_gz="$(mktemp)"
-	if ! curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/${latest}/${asset}" -o "$tmp_gz"; then
-		err "Failed to download tree-sitter $latest ($asset)"
-		rm -f "$tmp_gz"
-		return 1
-	fi
-
+	# Releases are glibc-linked and the floor varies by build (v0.26.11 needs 2.39,
+	# v0.25.10 needs 2.34, v0.24.7 needs 2.29), so try newest first and keep the
+	# first one that actually runs.
 	mkdir -p "$HOME/.local/bin"
-	if ! gunzip -c "$tmp_gz" >"$HOME/.local/bin/tree-sitter"; then
-		err "Failed to unpack $tmp_gz"
-		rm -f "$tmp_gz"
-		return 1
-	fi
-	rm -f "$tmp_gz"
-	chmod +x "$HOME/.local/bin/tree-sitter"
+	local dest="$HOME/.local/bin/tree-sitter"
+	local candidate tmp_gz tmp_bin
+	for candidate in "$latest" v0.25.10 v0.24.7; do
+		tmp_gz="$(mktemp)"
+		tmp_bin="$(mktemp)"
+		if ! curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/${candidate}/${asset}" -o "$tmp_gz"; then
+			warn "Could not download tree-sitter $candidate"
+			rm -f "$tmp_gz" "$tmp_bin"
+			continue
+		fi
+		if ! gunzip -c "$tmp_gz" >"$tmp_bin"; then
+			warn "Could not unpack tree-sitter $candidate"
+			rm -f "$tmp_gz" "$tmp_bin"
+			continue
+		fi
+		chmod +x "$tmp_bin"
+		if "$tmp_bin" --version &>/dev/null; then
+			mv "$tmp_bin" "$dest"
+			rm -f "$tmp_gz"
+			[ "$candidate" = "$latest" ] || warn "Using tree-sitter $candidate: $latest needs a newer glibc than this system has"
+			success "tree-sitter $("$dest" --version | awk '{print $2}') installed"
+			return 0
+		fi
+		warn "tree-sitter $candidate will not run here (likely glibc too old) - trying an older release"
+		rm -f "$tmp_gz" "$tmp_bin"
+	done
 
-	success "tree-sitter $("$HOME/.local/bin/tree-sitter" --version | awk '{print $2}') installed"
+	err "No published tree-sitter build runs on this system"
+	info "Options: 'brew install tree-sitter' (Homebrew ships its own glibc), or"
+	info "'cargo install tree-sitter-cli' to compile against the system glibc"
+	return 1
 }
 
-# Make zsh the login shell.
-#
-# Usually a no-op: macOS ships zsh as the default, and oh-my-zsh's installer
-# runs chsh itself. It matters when `install_oh_my_zsh` short-circuits because
-# ~/.zshrc already exists -- then nothing else would ever change the shell, and
-# everything in .zshrc.shared silently never loads on login.
-#
-# Any zsh counts as satisfied. Deliberately not upgrading /bin/zsh to a
-# Homebrew zsh: that would mean editing /etc/shells for no real benefit.
+# Make zsh the login shell. Usually a no-op -- oh-my-zsh's installer does this
+# too -- but needed when install_oh_my_zsh is skipped because ~/.zshrc exists.
 ensure_default_shell() {
 	# Prefer the system zsh on macOS: it's already in /etc/shells, whereas a
 	# Homebrew zsh (which `command -v` would find first) would need adding.

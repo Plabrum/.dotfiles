@@ -1,17 +1,9 @@
 #!/bin/bash
 
-# CLI tools the stowed configs expect, from the native package manager.
-#
-# These are all in `brew_packages_minimal` too, but Homebrew-on-Linux is a slow
-# sudo detour and one unavailable formula aborts the whole install, so on Linux
-# it's worth getting the essentials from apt/dnf first. Anything already present
-# is a no-op for the package manager.
-#
-# Deliberately NOT here: neovim (distro versions are too old for the slim config
-# -- see install_neovim_linux) and lazygit (no Debian/Ubuntu package).
+# CLI tools the stowed configs expect, from the native package manager rather
+# than waiting on Homebrew. Excludes neovim (distro versions too old, see
+# install_neovim_linux) and lazygit (no Debian package).
 install_linux_cli_tools() {
-	# fd is packaged as `fd-find` on Debian (binary `fdfind`) and `fd-find` on
-	# Fedora (binary `fd`).
 	local debian_pkgs=(tmux ripgrep fd-find jq fzf xz-utils unzip)
 	local redhat_pkgs=(tmux ripgrep fd-find jq fzf xz unzip)
 

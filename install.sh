@@ -103,14 +103,11 @@ main() {
         run_installer "Build Prerequisites" install_build_prerequisites
     fi
 
-    # 1b. Linux: CLI tools + Neovim from native sources, before Homebrew. These
-    # are the tools the stowed configs actually need, and getting them here means
-    # a Homebrew hiccup later doesn't leave the box without them.
+    # 1b. Linux: tools the configs need, before Homebrew so a brew failure
+    # doesn't leave the box without them.
     if is_linux; then
         run_installer "Linux CLI Tools" install_linux_cli_tools
         run_installer "Neovim (latest release)" install_neovim_linux
-        # nvim-treesitter's main branch builds parsers with the tree-sitter CLI;
-        # without it every parser errors out on first launch.
         run_installer "tree-sitter CLI" install_treesitter_cli_linux
     fi
 
@@ -120,7 +117,7 @@ main() {
     # 3. Minimal CLI packages (always installed)
     run_installer "Homebrew Packages" install_brew_packages "${brew_packages_minimal[@]}"
 
-    # 3b. Nerd Font (both platforms, both profiles - terminal configs assume it)
+    # 3b. Nerd Font (terminal configs assume its glyphs)
     run_installer "Nerd Font" install_nerd_font "${brew_fonts_macos[@]}"
 
     # 4. Full-profile extras (macOS GUI bundle)
@@ -148,7 +145,7 @@ main() {
         warn "Skipping stow - run from $REPO_PATH after cloning"
     fi
 
-    # 6b. Point the machine-local shell files at the freshly stowed shared ones
+    # 6b. Point ~/.zshrc and ~/.aliases at the stowed shared config
     run_installer "Shell Bootstrap" ensure_shell_bootstrap
 
     # 6c. Make sure zsh is actually the login shell (no-op if oh-my-zsh did it)
