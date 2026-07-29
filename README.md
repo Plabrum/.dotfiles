@@ -233,11 +233,29 @@ cd ~/.dotfiles && INSTALL_PROFILE=minimal ./install.sh
 - **Nerd Font**: on Linux the font is fetched from the Nerd Fonts release into
   `~/.local/share/fonts`, and skipped entirely if `fontconfig` is absent — over
   SSH the font that matters is your *client's*, not the server's.
+- **Neovim + tree-sitter** come from GitHub releases into `~/.local/bin`, not the
+  package manager: the slim config needs Neovim >= 0.12 (`vim.pack`), which
+  distros don't ship yet, and nvim-treesitter's `main` branch shells out to the
+  `tree-sitter` CLI to build parsers. Both steps resolve the newest release each
+  run, so re-running them is also the upgrade path.
 - **Physical console**: on tty1 (`TERM=linux`) the kernel renders a PSF font,
-  which is capped at 512 glyphs, so Nerd Font icons can't display there no
-  matter what is installed. `.zshrc.shared` detects this and falls back to
-  `POWERLEVEL9K_MODE=ascii`, so the prompt degrades cleanly instead of showing
-  boxes. SSH sessions are unaffected.
+  which is capped at 512 glyphs, so none of the prompt's glyphs exist there —
+  not the Nerd Font icons, and not `❯ ✔ ✘ …` either. `.zshrc.shared` skips
+  powerlevel10k entirely in that case and uses a plain ASCII prompt. SSH
+  sessions are unaffected, since `TERM` then comes from the client.
+
+### First Neovim launch
+
+The first `nvim` start installs every plugin and builds parsers, which prints
+enough messages to trigger a hit-enter prompt after each one. Do it headlessly
+instead:
+
+```bash
+nvim --headless -c 'qa'     # installs plugins; repeat once for parsers
+```
+
+If parsers still fail with `ENOENT ... 'tree-sitter'`, the CLI is missing —
+`tree-sitter --version` should work, and `~/.local/bin` must be on PATH.
 
 ## Scripts
 

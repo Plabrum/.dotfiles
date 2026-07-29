@@ -109,6 +109,9 @@ main() {
     if is_linux; then
         run_installer "Linux CLI Tools" install_linux_cli_tools
         run_installer "Neovim (latest release)" install_neovim_linux
+        # nvim-treesitter's main branch builds parsers with the tree-sitter CLI;
+        # without it every parser errors out on first launch.
+        run_installer "tree-sitter CLI" install_treesitter_cli_linux
     fi
 
     # 2. Homebrew (works on both platforms)

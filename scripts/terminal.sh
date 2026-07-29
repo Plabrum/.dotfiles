@@ -220,6 +220,78 @@ install_neovim_linux() {
 	fi
 }
 
+# Install (or upgrade to) the latest tree-sitter CLI on Linux.
+#
+# nvim-treesitter's `main` branch shells out to the `tree-sitter` binary to build
+# parsers; without it every parser fails with "ENOENT ... 'tree-sitter'" -- one
+# error message per parser, each of which becomes a hit-enter prompt on first
+# launch. macOS gets it from the `tree-sitter` Homebrew formula.
+#
+# Same approach as install_neovim_linux: resolve the newest tag at run time,
+# compare with what's installed, unpack into ~/.local/bin. The release ships the
+# binary as a bare gzip, not a tarball.
+install_treesitter_cli_linux() {
+	if is_macos; then
+		info "Skipping - macOS gets tree-sitter from Homebrew"
+		return 0
+	fi
+
+	local arch asset
+	arch="$(uname -m)"
+	case "$arch" in
+		x86_64 | amd64) asset="tree-sitter-linux-x64.gz" ;;
+		aarch64 | arm64) asset="tree-sitter-linux-arm64.gz" ;;
+		*)
+			err "No tree-sitter release build for architecture '$arch'"
+			return 1
+			;;
+	esac
+
+	local latest
+	latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+		https://github.com/tree-sitter/tree-sitter/releases/latest | sed 's|.*/tag/||')"
+	if [ -z "$latest" ]; then
+		err "Could not determine the latest tree-sitter release"
+		return 1
+	fi
+
+	local current=""
+	if command -v tree-sitter &>/dev/null; then
+		# `tree-sitter --version` prints e.g. "tree-sitter 0.26.11" (no leading v)
+		current="v$(tree-sitter --version | awk '{print $2}')"
+	fi
+
+	if [ "$current" = "$latest" ]; then
+		warn "tree-sitter ${current} is already the latest release"
+		return 0
+	fi
+
+	if [ -n "$current" ]; then
+		info "Upgrading tree-sitter $current -> $latest..."
+	else
+		info "Installing tree-sitter $latest..."
+	fi
+
+	local tmp_gz
+	tmp_gz="$(mktemp)"
+	if ! curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/${latest}/${asset}" -o "$tmp_gz"; then
+		err "Failed to download tree-sitter $latest ($asset)"
+		rm -f "$tmp_gz"
+		return 1
+	fi
+
+	mkdir -p "$HOME/.local/bin"
+	if ! gunzip -c "$tmp_gz" >"$HOME/.local/bin/tree-sitter"; then
+		err "Failed to unpack $tmp_gz"
+		rm -f "$tmp_gz"
+		return 1
+	fi
+	rm -f "$tmp_gz"
+	chmod +x "$HOME/.local/bin/tree-sitter"
+
+	success "tree-sitter $("$HOME/.local/bin/tree-sitter" --version | awk '{print $2}') installed"
+}
+
 # Make zsh the login shell.
 #
 # Usually a no-op: macOS ships zsh as the default, and oh-my-zsh's installer
