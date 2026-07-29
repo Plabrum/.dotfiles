@@ -19,6 +19,7 @@ AVAILABLE_PACKAGES=(
     "karabiner"
     "bin"
     "claude"
+    "lazygit"
 )
 
 # Default packages to stow if no arguments provided
@@ -29,6 +30,7 @@ DEFAULT_PACKAGES=(
     "tmux"
     "bin"
     "claude"
+    "lazygit"
 )
 
 show_help() {

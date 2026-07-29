@@ -1,6 +1,6 @@
 -- All git in one place: the sign column + hunk operators (mini.diff), the `:Git`
--- command and blame-at-cursor (mini.git), and a full-screen lazygit (hand-rolled
--- float). mini.diff and mini.git are both part of the already-loaded mini.nvim.
+-- command and blame-at-cursor (mini.git), and a full-screen lazygit (snacks).
+-- mini.diff and mini.git are both part of the already-loaded mini.nvim.
 
 -- ============================================================
 -- MINI.DIFF (sign column + hunk operators)
@@ -49,32 +49,49 @@ vim.keymap.set("n", "<leader>gL", "<cmd>Git log --oneline<CR>", { desc = "[G]it 
 -- LAZYGIT (full-screen float)
 -- ============================================================
 
----Open lazygit filling the whole editor.
+---`tmux select-pane` in one direction, for use inside the lazygit terminal.
+---
+---Without these, `<C-hjkl>` is dead in lazygit: tmux sees nvim on the pane's tty
+---so it forwards the key instead of switching panes itself, and the mappings in
+---`config.keymaps` are normal-mode only.
+---@param dir string One of `L`/`D`/`U`/`R`.
+---@return fun(): nil
+local function tmux_pane(dir)
+  return function()
+    vim.fn.system({ "tmux", "select-pane", "-" .. dir })
+  end
+end
+
+---Toggle lazygit filling the whole editor.
+---
+---snacks caches the terminal per cwd, so `q` only hides the window: pressing
+---`<leader>gg` again returns to the same lazygit process, cursor and staged
+---state intact, instead of respawning it.
+---
+---`configure = false` keeps snacks out of `$LG_CONFIG_FILE` -- it would
+---otherwise generate a theme matching the colorscheme and point lazygit at it.
 ---
 ---Exported because the `config.ui` dashboard offers it as a one-key action too.
 ---That module loads *before* this one, but it only `require`s us when the key is
 ---actually pressed -- by which time we're loaded and cached.
 ---@return nil
 local function lazygit()
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = vim.o.columns,
-    height = vim.o.lines,
-    row = 0,
-    col = 0,
-    style = "minimal",
-    border = "none",
+  Snacks.lazygit({
+    configure = false,
+    win = {
+      position = "float",
+      width = 0,
+      height = 0,
+      backdrop = false,
+      border = "none",
+      keys = {
+        nav_h = { "<C-h>", tmux_pane("L"), mode = { "n", "t" }, desc = "tmux pane left" },
+        nav_j = { "<C-j>", tmux_pane("D"), mode = { "n", "t" }, desc = "tmux pane down" },
+        nav_k = { "<C-k>", tmux_pane("U"), mode = { "n", "t" }, desc = "tmux pane up" },
+        nav_l = { "<C-l>", tmux_pane("R"), mode = { "n", "t" }, desc = "tmux pane right" },
+      },
+    },
   })
-  vim.fn.jobstart("lazygit", {
-    term = true,
-    on_exit = function()
-      if vim.api.nvim_buf_is_valid(buf) then
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end
-    end,
-  })
-  vim.cmd.startinsert()
 end
 
 vim.keymap.set("n", "<leader>gg", lazygit, { desc = "LazyGit (floating)" })

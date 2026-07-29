@@ -1,0 +1,10 @@
+# stylua's own defaults are tabs at width 4, which nothing in the Neovim
+# ecosystem uses -- the Neovim runtime, folke/*, mini.nvim and LazyVim are all
+# 2-space. Without this file, formatting any Lua here (conform runs stylua on
+# save, see nvim/.config/nvim/lua/config/format.lua) would silently retab it.
+#
+# Lives at the repo root so both nvim configs, and any Lua added later, get the
+# same treatment and can't drift apart.
+indent_type = "Spaces"
+indent_width = 2
+column_width = 120
