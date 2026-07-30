@@ -22,7 +22,14 @@ MiniIcons.mock_nvim_web_devicons()
 -- COLORSCHEME
 -- ============================================================
 
-vim.pack.add({ util.gh("sainnhe/sonokai") })
+-- Extra schemes are installed purely so `<leader>uC` (config.nav) has more than
+-- one option to preview/switch between via Snacks.picker.colorschemes().
+vim.pack.add({
+  util.gh("sainnhe/sonokai"),
+  util.gh("rebelot/kanagawa.nvim"),
+  util.gh("folke/tokyonight.nvim"),
+  util.gh("ellisonleao/gruvbox.nvim"),
+})
 vim.g.sonokai_enable_italic = false
 vim.cmd.colorscheme("sonokai")
 

@@ -49,6 +49,9 @@ end, { desc = "Switch buffer" })
 vim.keymap.set("n", "<leader>su", function()
   Snacks.picker.undo()
 end, { desc = "[S]earch [U]ndo History" })
+vim.keymap.set("n", "<leader>uC", function()
+  Snacks.picker.colorschemes()
+end, { desc = "[U]I: [C]olorscheme (live preview)" })
 
 -- The rest of the `<leader>s` set: these were LazyVim snacks-picker defaults
 -- (from its `editor.snacks_picker` extra) that never got hand-copied here.
