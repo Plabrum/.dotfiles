@@ -17,6 +17,7 @@
 -- ├── editing.lua         Textobjects, surround, comments, pairs, yank, dial.
 -- ├── nav.lua             Picker, explorer, harpoon, flash.
 -- ├── git.lua             mini.diff, mini.git, lazygit.
+-- ├── orgmode.lua         nvim-orgmode (loaded lazily on the `org` filetype).
 -- ├── lsp.lua             Servers, diagnostics, LSP mappings. Base servers only --
 -- │                       exports `M.servers`/`M.mason_tools` for `lang.*` to add to,
 -- │                       and `M.finalize()` to install/enable them all.
@@ -28,7 +29,9 @@
 -- ├── retrain.lua         Temporary LazyVim compat shims (delete when ready).
 -- ├ lua/lang/
 -- ├── go.lua              gopls, goimports/gofumpt, golangci-lint (nvim-lint).
+-- ├── ocaml.lua           ocamllsp + ocamlformat, both via `opam exec`.
 -- ├── python.lua          basedpyright.
+-- ├── rust.lua            rustaceanvim (rust-analyzer), crates.nvim.
 -- ├── typescript.lua      ts_ls.
 --
 -- Each `config.*` module is self-contained: it adds its own plugins with
@@ -90,13 +93,18 @@ load("now", "config.nav")
 load("now", "config.git")
 load("now", "config.retrain")
 
+-- Filetype-scoped: nothing here matters until an `.org` file is opened.
+load("filetype:org", "config.orgmode")
+
 load(if_args, "config.lsp")
 load(if_args, "config.completion")
 load(if_args, "config.format")
 load(if_args, "config.treesitter")
 
 load(if_args, "lang.go")
+load(if_args, "lang.ocaml")
 load(if_args, "lang.python")
+load(if_args, "lang.rust")
 load(if_args, "lang.typescript")
 
 -- `lang.*` modules only register themselves onto `config.lsp`/`config.format`;

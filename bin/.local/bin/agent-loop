@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""agent-loop — spawn repeating Claude Code sessions against a Linear or GitHub Issues backlog."""
+"""agent-loop — spawn repeating Claude Code sessions against a tt, Linear or GitHub Issues backlog."""
 
 import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -24,6 +25,13 @@ DEPENDENCY_RE = re.compile(r"\b(?:blocked by|depends on)\s+#(\d+)", re.IGNORECAS
 PR_CLOSES_RE = re.compile(r"\b(?:closes|fixes|resolves)\s+#(\d+)\b", re.IGNORECASE)
 TICKET_MARKER = "{{TICKET}}"
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+
+TT_PROJECT_AUTO = "\x00auto"  # sentinel for bare --tt-project (resolve from cwd)
+
+# tt has no `shelved` status and no labels, so a ticket that keeps failing has
+# nowhere durable to record "stop picking me". We track attempts in-process and
+# drop a ticket for the rest of the loop's life once it hits this ceiling.
+TT_MAX_ATTEMPTS = 2
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -49,8 +57,9 @@ If the ticket is ambiguous or out-of-scope, post a comment explaining why and st
 INIT_META_PROMPT = """\
 Help the user get agent-loop running on their project. Ask these questions one at a time:
 
-1. Where is the backlog? (a) Linear — project name + state that means "ready", e.g. "Backlog" \
-(b) GitHub Issues — owner/repo + optional label filter (c) neither
+1. Where is the backlog? (a) tt — project slug, or blank to resolve it from the project's path \
+(b) Linear — project name + state that means "ready", e.g. "Backlog" \
+(c) GitHub Issues — owner/repo + optional label filter (d) neither
 2. How should tickets be closed? commit-on-branch (default) or feature-branch + PR?
 3. Any hard constraints? (e.g. never push to main, labels to skip)
 
@@ -427,6 +436,155 @@ def pick_github_ticket(
     return chosen
 
 
+def _tt(*args: str, timeout: int = 30) -> subprocess.CompletedProcess | None:
+    """Run `tt` and hand back the finished process, or None if it could not run.
+
+    tt exits 123 when an object *refuses* an action (a real answer, not a bug)
+    and 2 on a usage error. Callers decide which they care about.
+    """
+    try:
+        return subprocess.run(["tt", *args], capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        print(f"[agent-loop] Error: tt {' '.join(args)} failed: {e}", file=sys.stderr)
+        return None
+
+
+def _tt_json(*args: str) -> object | None:
+    """Run a `tt` command expected to emit JSON and parse it."""
+    result = _tt(*args)
+    if result is None:
+        return None
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        print(f"[agent-loop] Error: tt {' '.join(args)} exited {result.returncode}: {detail}", file=sys.stderr)
+        return None
+    try:
+        return json.loads(result.stdout or "null")
+    except json.JSONDecodeError as e:
+        print(f"[agent-loop] Error: tt {' '.join(args)} returned non-JSON: {e}", file=sys.stderr)
+        return None
+
+
+def tt_project_for_cwd() -> str | None:
+    """Find the tt project whose `path` contains the current directory.
+
+    tt stores a filesystem path per project, so `--tt-project` with no value can
+    resolve itself from where the loop is running.
+    """
+    projects = _tt_json("project", "ls", "--json")
+    if not isinstance(projects, list):
+        return None
+    cwd = Path.cwd().resolve()
+    best: tuple[int, str] | None = None
+    for p in projects:
+        raw = p.get("path")
+        if not raw:
+            continue
+        try:
+            root = Path(raw).expanduser().resolve()
+        except OSError:
+            continue
+        if cwd == root or root in cwd.parents:
+            depth = len(root.parts)
+            if best is None or depth > best[0]:
+                best = (depth, p["slug"])
+    return best[1] if best else None
+
+
+def tt_issue(number: int) -> dict | None:
+    """Fetch one issue's full record (ls omits the body)."""
+    payload = _tt_json("issue", "show", str(number))
+    if not isinstance(payload, dict):
+        return None
+    issue = payload.get("issue")
+    return issue if isinstance(issue, dict) else None
+
+
+def pick_tt_ticket(project: str | None, attempts: dict[int, int]) -> dict | None:
+    """Pick the next tt issue to work on.
+
+    Eligible = status `todo`. `high` priority floats to the top, then lowest id
+    first. tt has no labels and no dependency edges, so --skip-label,
+    --prioritize-label and --skip-deps have no effect here; the title-based epic
+    guard still applies.
+
+    Returns {'kind': 'tt', 'number': int, 'title': str, 'body': str,
+    'priority': str, 'project': str, 'labels': []} or None when nothing matches.
+    """
+    args = ["issue", "ls", "--json"]
+    if project:
+        args += ["--project", project]
+    rows = _tt_json(*args)
+    if not isinstance(rows, list):
+        return None
+
+    eligible = [
+        r for r in rows
+        if r.get("status") == "todo"
+        and not EPIC_TITLE_RE.search(r.get("title") or "")
+        and attempts.get(r["id"], 0) < TT_MAX_ATTEMPTS
+    ]
+    if not eligible:
+        return None
+
+    eligible.sort(key=lambda r: (0 if r.get("priority") == "high" else 1, r["id"]))
+    chosen = eligible[0]
+
+    full = tt_issue(chosen["id"])
+    if full is None:
+        return None
+    return {
+        "kind": "tt",
+        "number": full["id"],
+        "title": full.get("title") or "",
+        "body": full.get("body") or "",
+        "priority": full.get("priority") or "normal",
+        "project": full.get("project") or "",
+        "labels": [],
+    }
+
+
+def tt_set_status(ticket: dict, status: str) -> bool:
+    """Move a tt issue to `status`.
+
+    tt's `edit` is a whole-object write, not a patch — every editable field has
+    to be sent back or it is cleared. Re-read the issue first so a change made
+    between pick and now (in the TUI, or by the session itself) is not clobbered.
+    """
+    current = tt_issue(ticket["number"]) or ticket
+    payload = json.dumps({
+        "title": current.get("title") or "",
+        "body": current.get("body") or "",
+        "status": status,
+        "priority": current.get("priority") or "normal",
+    })
+    result = _tt("issue", "action", str(ticket["number"]), "edit", payload)
+    if result is None:
+        return False
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        # 123 is a refusal — the object's answer. Report it, never retry blind.
+        print(f"[agent-loop] tt refused status={status} on #{ticket['number']}: {detail}", file=sys.stderr)
+        return False
+    return True
+
+
+def tt_issue_status(number: int) -> str | None:
+    issue = tt_issue(number)
+    return issue.get("status") if issue else None
+
+
+def _tt_close_command(ticket: dict) -> str:
+    """The exact shell line that marks a tt issue done, safely quoted."""
+    payload = json.dumps({
+        "title": ticket["title"],
+        "body": ticket["body"],
+        "status": "done",
+        "priority": ticket["priority"],
+    })
+    return f"tt issue action {ticket['number']} edit {shlex.quote(payload)}"
+
+
 def git_head_short() -> str:
     """Return short HEAD SHA, or 'no-git' if not in a repo."""
     try:
@@ -462,6 +620,9 @@ def _branch_name(ticket: dict, pattern: str) -> str:
     if ticket["kind"] == "github":
         kind = "gh"
         ident = str(ticket["number"])
+    elif ticket["kind"] == "tt":
+        kind = "tt"
+        ident = str(ticket["number"])
     else:
         kind = "lin"
         ident = ticket["identifier"].lower()
@@ -469,8 +630,16 @@ def _branch_name(ticket: dict, pattern: str) -> str:
 
 
 def _ticket_ref(ticket: dict) -> str:
-    """How the ticket is referenced in commit trailers / PR bodies (#N or ENG-123)."""
-    return f"#{ticket['number']}" if ticket["kind"] == "github" else ticket["identifier"]
+    """How the ticket is referenced in commit trailers / PR bodies (#N, tt#N or ENG-123).
+
+    tt refs are prefixed so they can't be mistaken for — or silently auto-link
+    to — a GitHub issue of the same number when the branch is pushed.
+    """
+    if ticket["kind"] == "github":
+        return f"#{ticket['number']}"
+    if ticket["kind"] == "tt":
+        return f"tt#{ticket['number']}"
+    return ticket["identifier"]
 
 
 def render_ticket_block(
@@ -487,19 +656,39 @@ def render_ticket_block(
 
     if ticket["kind"] == "github":
         source = f"GitHub `{ticket['repo']}` issue #{ticket['number']}"
+        meta = f"**Labels:** {labels}\n"
+    elif ticket["kind"] == "tt":
+        source = f"tt project `{ticket['project']}`, issue #{ticket['number']}"
+        # tt has no labels; priority is the only other axis worth showing.
+        meta = f"**Priority:** {ticket['priority']}\n"
     else:
         source = f"Linear project `{ticket['project']}`, issue `{ticket['identifier']}` (id `{ticket['id']}`)"
+        meta = f"**Labels:** {labels}\n"
 
     header = (
         "## Ticket\n\n"
         f"**Source:** {source}\n"
         f"**Title:** {ticket['title']}\n"
-        f"**Labels:** {labels}\n\n"
+        f"{meta}\n"
         "### Body\n\n"
         f"{body}\n\n"
     )
 
     if close_mode == "commit":
+        if ticket["kind"] == "tt":
+            close = (
+                "### To close\n\n"
+                "After committing and pushing on the current branch, mark the issue done.\n"
+                "`tt`'s edit is a whole-object write, not a patch — every field must be sent "
+                "back or it is cleared. This command already carries the issue's current "
+                "title, body and priority, so run it as-is:\n\n"
+                "```\n"
+                f"{_tt_close_command(ticket)}\n"
+                "```\n\n"
+                "If you changed the title or body during the session, run `tt issue show "
+                f"{ticket['number']}` first and send the updated fields instead.\n"
+            )
+            return header + close
         if ticket["kind"] == "github":
             n = ticket["number"]
             repo = ticket["repo"]
@@ -523,6 +712,33 @@ def render_ticket_block(
     if close_mode == "pr":
         feature_branch = _branch_name(ticket, branch_pattern)
         base = pr_base or "main"
+        if ticket["kind"] == "tt":
+            # tt has no `review` state, so the issue stays in `doing` until a human
+            # merges. Marking it done here would make the PR look landed when it
+            # isn't — and the loop only picks `todo`, so `doing` is enough to stop
+            # it being picked up again.
+            close = (
+                "### To close\n\n"
+                f"Cut a feature branch off `{base}`, commit, push, open a PR.\n\n"
+                "```\n"
+                f"git checkout -b {feature_branch}\n"
+                "git add -A\n"
+                f"git commit -m \"<prefix>: <subject> ({ref})\n"
+                "\n"
+                "<one-paragraph why / what changed>\n"
+                "\n"
+                f"Refs {ref}\n"
+                "\n"
+                "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\"\n"
+                f"git push -u origin {feature_branch}\n"
+                f"gh pr create --base {base} --head {feature_branch} \\\n"
+                f"  --title \"<prefix>: <subject> ({ref})\" \\\n"
+                f"  --body \"Refs {ref}\"\n"
+                "```\n\n"
+                f"Leave the tt issue in `doing` — do NOT mark it done. It is marked done "
+                "when the PR merges.\n"
+            )
+            return header + close
         if ticket["kind"] == "github":
             repo = ticket["repo"]
             close = (
@@ -691,8 +907,7 @@ def run_unblock_session(
     """
     ticket_summary = ""
     if ticket:
-        ref = f"#{ticket['number']}" if ticket["kind"] == "github" else ticket["identifier"]
-        ticket_summary = f"Ticket: {ref} — {ticket['title']}\n\n"
+        ticket_summary = f"Ticket: {_ticket_ref(ticket)} — {ticket['title']}\n\n"
 
     prompt = f"""\
 The agent-loop encountered an issue and needs you to unblock it.
@@ -758,6 +973,20 @@ def cmd_run(args: argparse.Namespace) -> None:
         backlog_source = ("linear", args.linear_project)
     elif args.github_repo:
         backlog_source = ("github", args.github_repo)
+    elif args.tt_project is not None:
+        # Bare --tt-project resolves the project from the cwd via tt's stored path.
+        tt_project = args.tt_project
+        if tt_project == TT_PROJECT_AUTO:
+            tt_project = tt_project_for_cwd()
+            if tt_project is None:
+                print(
+                    "Error: --tt-project given with no value and no tt project's path "
+                    f"covers {Path.cwd()}.\n"
+                    "Set one with `tt project setPath`, or pass --tt-project SLUG.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        backlog_source = ("tt", tt_project)
 
     # Marker is only required when a backlog source is configured (ticket-driven loop).
     # No backlog source = QA-style loop where the prompt runs as-is each iteration.
@@ -771,9 +1000,14 @@ def cmd_run(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
 
+    # tt has no shelved state, so failed picks are remembered for this run only.
+    tt_attempts: dict[int, int] = {}
+
     def _pick() -> dict | None:
         if backlog_source is None:
             return None
+        if backlog_source[0] == "tt":
+            return pick_tt_ticket(backlog_source[1], tt_attempts)
         if backlog_source[0] == "linear":
             return pick_linear_ticket(
                 backlog_source[1],
@@ -804,7 +1038,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Dry-run: pick a ticket, print the rendered block, exit. No Claude spawn.
     if args.print_ticket:
         if backlog_source is None:
-            print("Error: --print-ticket requires --github-repo or --linear-project.", file=sys.stderr)
+            print(
+                "Error: --print-ticket requires --github-repo, --linear-project or --tt-project.",
+                file=sys.stderr,
+            )
             sys.exit(2)
         ticket = _pick()
         if ticket is None:
@@ -837,6 +1074,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         print("    Stop at: (none)")
     if backlog_source is None:
         print("    Backlog: (no source — runs prompt as-is each iteration)")
+    elif backlog_source[0] == "tt":
+        print(f"    Backlog: tt project '{backlog_source[1]}' status=todo")
     elif backlog_source[0] == "linear":
         print(f"    Backlog: Linear project '{backlog_source[1]}' state={args.linear_state}")
     else:
@@ -846,7 +1085,13 @@ def cmd_run(args: argparse.Namespace) -> None:
         if args.milestone:
             bits.append(f"milestone={args.milestone!r}")
         print(f"    Backlog: GitHub {backlog_source[1]} " + (" ".join(bits) or "(no filter)"))
-    if backlog_source is not None:
+    if backlog_source is not None and backlog_source[0] == "tt":
+        # Be explicit that the label/dep flags are inert here rather than let the
+        # summary imply filters that tt cannot express.
+        print(f"    Pick:    high-priority first, then lowest id (max {TT_MAX_ATTEMPTS} attempts/issue)")
+        if args.skip_label or args.prioritize_label or args.skip_deps:
+            print("             note: --skip-label/--prioritize-label/--skip-deps are ignored (tt has no labels or deps)")
+    elif backlog_source is not None:
         print(f"    Pick:    skip={','.join(skip_labels) or '(none)'} priority={','.join(priority_labels) or '(none)'} skip_deps={args.skip_deps}")
         print(f"    Close:   mode={args.close_mode}" + (f" pr_base={pr_base}" if args.close_mode == "pr" else ""))
     print()
@@ -883,6 +1128,13 @@ def cmd_run(args: argparse.Namespace) -> None:
             print("    Picked up: (no ticket — running prompt as-is)")
         elif ticket["kind"] == "github":
             print(f"    Picked up: #{ticket['number']} {ticket['title']}")
+        elif ticket["kind"] == "tt":
+            print(f"    Picked up: tt#{ticket['number']} {ticket['title']}")
+            tt_attempts[ticket["number"]] = tt_attempts.get(ticket["number"], 0) + 1
+            if tt_set_status(ticket, "doing"):
+                print("    Claimed:   moved to 'doing'")
+            else:
+                print("    Claimed:   (could not move to 'doing'; continuing)")
         else:
             print(f"    Picked up: {ticket['identifier']} {ticket['title']}")
             success, state_name = linear_mark_in_progress(ticket["id"])
@@ -927,7 +1179,15 @@ def cmd_run(args: argparse.Namespace) -> None:
             # For Linear tickets: revert the state back to Backlog so the next picker
             # pass can re-evaluate. We only do this when the ticket hasn't been shelved
             # via the `tracker` label — that label is the agent's "do not retry" signal.
-            if ticket is not None and ticket["kind"] == "linear":
+            if ticket is not None and ticket["kind"] == "tt":
+                if tt_set_status(ticket, "todo"):
+                    print(f"    Reverted:  tt#{ticket['number']} moved back to 'todo'")
+                else:
+                    print(f"    Reverted:  could not move tt#{ticket['number']} back (continuing)")
+                used = tt_attempts.get(ticket["number"], 0)
+                if used >= TT_MAX_ATTEMPTS:
+                    print(f"    Shelved:   tt#{ticket['number']} hit {TT_MAX_ATTEMPTS} attempts — skipped for the rest of this run")
+            elif ticket is not None and ticket["kind"] == "linear":
                 current_labels = {l.lower() for l in linear_issue_labels(ticket["id"])}
                 if "tracker" in current_labels:
                     print(f"    Shelved:   {ticket['identifier']} has `tracker` label — leaving state as-is")
@@ -955,6 +1215,14 @@ def cmd_run(args: argparse.Namespace) -> None:
             state = github_issue_state(ticket["repo"], ticket["number"])
             if state == "CLOSED":
                 print(f"               closed #{ticket['number']}")
+        elif ticket["kind"] == "tt":
+            state = tt_issue_status(ticket["number"])
+            if state == "done":
+                print(f"               closed tt#{ticket['number']}")
+            elif args.close_mode == "commit":
+                # Commit landed but the session skipped its close step — the issue
+                # is stranded in `doing` and no longer visible to the picker.
+                print(f"               warning: tt#{ticket['number']} still '{state}' — close step was not run")
         else:
             state = linear_issue_state(ticket["id"])
             if state == "completed":
@@ -1011,6 +1279,14 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
     backlog = p.add_mutually_exclusive_group()
     backlog.add_argument("--linear-project", metavar="NAME", help="Linear project name (uses LINEAR_API_KEY env var)")
     backlog.add_argument("--github-repo", metavar="OWNER/REPO", help="GitHub repo for issue backlog")
+    backlog.add_argument(
+        "--tt-project",
+        nargs="?",
+        const=TT_PROJECT_AUTO,
+        default=None,
+        metavar="SLUG",
+        help="tt project slug for the issue backlog (picks status=todo, high priority first). Pass with no value to resolve the project from the current directory via its tt path.",
+    )
     p.add_argument("--linear-state", default="Backlog", metavar="STATE", help="Linear state name to check for work (default: Backlog)")
     p.add_argument("--label", default=None, metavar="LABEL", help="GitHub Issues label filter passed to gh issue list (optional)")
     p.add_argument("--milestone", default=None, metavar="NAME", help="GitHub Issues milestone filter (optional)")
@@ -1048,7 +1324,7 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         "--branch-pattern",
         default="agent/{kind}-{id}-{slug}",
         metavar="TMPL",
-        help="Branch name template for --close-mode=pr. Vars: {kind} (gh|lin), {id} (number/identifier, lowercased), {slug} (5-word kebab-case of the title). Default: agent/{kind}-{id}-{slug}.",
+        help="Branch name template for --close-mode=pr. Vars: {kind} (gh|tt|lin), {id} (number/identifier, lowercased), {slug} (5-word kebab-case of the title). Default: agent/{kind}-{id}-{slug}.",
     )
     p.add_argument("--model", default="opus", metavar="MODEL", help="Claude model (default: opus)")
     deadline = p.add_mutually_exclusive_group()

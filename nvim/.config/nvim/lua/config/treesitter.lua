@@ -49,6 +49,12 @@ vim.api.nvim_create_autocmd("FileType", {
     if not language then
       return
     end
+    -- nvim-orgmode ships and manages its own `org` grammar and starts
+    -- highlighting itself (see `config.orgmode`); installing nvim-treesitter's
+    -- differently-shaped `org` parser here would conflict with it.
+    if language == "org" then
+      return
+    end
     if vim.tbl_contains(require("nvim-treesitter").get_installed("parsers"), language) then
       try_attach(args.buf, language)
     elseif vim.tbl_contains(require("nvim-treesitter").get_available(), language) then

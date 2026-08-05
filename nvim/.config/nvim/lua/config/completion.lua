@@ -3,6 +3,7 @@
 -- Async two-stage autocompletion: LSP candidates when a server is attached,
 -- falling back to buffer-keyword completion otherwise. A popup appears after a
 -- short delay; signature help pops up after trigger characters like `(`.
+-- Suppressed in special buffers -- see the `minicompletion_disable` autocmd below.
 --
 -- Accept/navigate keys are wired through mini.keymap's `map_multistep`, which is
 -- what lets one key do the right thing by context: `<CR>` accepts the selected
@@ -44,6 +45,39 @@ vim.api.nvim_create_autocmd("LspAttach", {
 -- signature features mini.completion implements, so servers send snippets,
 -- resolve support, etc. Merges into each server's config from `config.lsp`.
 vim.lsp.config("*", { capabilities = MiniCompletion.get_lsp_capabilities() })
+
+-- Every mini module honours a `mini{module}_disable` flag, global or per buffer
+-- (`:h MiniCompletion` -> "Disabling"). mini.completion already sets the buffer
+-- one for `TelescopePrompt`; this generalises that to any buffer with a
+-- non-empty `buftype` -- pickers, the dashboard, terminals, help, quickfix. None
+-- of them are places you write code, and a popup over them is pure noise.
+-- Normal files have `buftype == ""`, so they're untouched.
+--
+-- This covers the picker without naming it: snacks.picker's input buffer sets
+-- `buftype = "prompt"` (`snacks/picker/core/input.lua`), as does any other
+-- prompt-style plugin window -- which is why matching on `buftype` beats keeping
+-- a list of plugin filetypes that goes stale.
+vim.api.nvim_create_autocmd("BufEnter", {
+  group = vim.api.nvim_create_augroup("slim-completion-disable", { clear = true }),
+  callback = function(ev)
+    if vim.bo[ev.buf].buftype ~= "" then
+      vim.b[ev.buf].minicompletion_disable = true
+    end
+  end,
+})
+
+-- Manual trigger, for the buffers above and for asking before the delay elsewhere.
+-- Not `<C-Space>`: that's treesitter incremental selection (see `config.nav`), and
+-- one key shouldn't mean two things. `<C-n>` already means "complete" in insert
+-- mode, so this just makes it smarter -- native `<C-n>` is always buffer-keyword,
+-- while this prefers the LSP when a server is attached. With the menu already
+-- open it stays plain `<C-n>` (next item), so nothing native is lost.
+vim.keymap.set("i", "<C-n>", function()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-n>"
+  end
+  return vim.bo.omnifunc == "" and "<C-n>" or "<C-x><C-o>"
+end, { expr = true, desc = "Trigger completion" })
 
 -- Context-aware insert-mode keys (see the header note). `map_multistep` tries
 -- each step in order and falls back to the key's default when none apply.

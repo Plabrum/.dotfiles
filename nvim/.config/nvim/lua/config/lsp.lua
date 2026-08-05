@@ -50,6 +50,16 @@ require("trouble").setup({})
 vim.keymap.set("n", "<leader>xx", "<cmd>Trouble diagnostics toggle<CR>", { desc = "Diagnostics (Trouble)" })
 vim.keymap.set("n", "<leader>xX", "<cmd>Trouble diagnostics toggle filter.buf=0<CR>", { desc = "Buffer Diagnostics" })
 
+-- LazyVim puts these two under `<leader>c`; they live in the `<leader>x` panel
+-- group here instead, since what they open is the same Trouble window.
+vim.keymap.set("n", "<leader>xs", "<cmd>Trouble symbols toggle<CR>", { desc = "Symbols (Trouble)" })
+vim.keymap.set("n", "<leader>xr", "<cmd>Trouble lsp toggle<CR>", { desc = "LSP References/Definitions (Trouble)" })
+
+-- Uppercase = the same list as the lowercase native toggles below, but rendered
+-- in Trouble's panel.
+vim.keymap.set("n", "<leader>xL", "<cmd>Trouble loclist toggle<CR>", { desc = "Location List (Trouble)" })
+vim.keymap.set("n", "<leader>xQ", "<cmd>Trouble qflist toggle<CR>", { desc = "Quickfix List (Trouble)" })
+
 -- Native location/quickfix lists. Toggles, like LazyVim's: open when closed,
 -- close when open. `winid ~= 0` is how you ask "is this list already showing?".
 vim.keymap.set("n", "<leader>xl", function()
@@ -129,10 +139,22 @@ vim.api.nvim_create_autocmd("LspAttach", {
     end, { buffer = event.buf, expr = true, desc = "LSP: [R]e[n]ame" })
     map("gra", vim.lsp.buf.code_action, "[G]oto Code [A]ction", { "n", "x" })
     map("grD", vim.lsp.buf.declaration, "[G]oto [D]eclaration")
-    map("grr", vim.lsp.buf.references, "[G]oto [R]eferences")
-    map("gri", vim.lsp.buf.implementation, "[G]oto [I]mplementation")
-    map("grd", vim.lsp.buf.definition, "[G]oto [D]efinition")
-    map("grt", vim.lsp.buf.type_definition, "[G]oto [T]ype Definition")
+    -- The goto family goes through snacks.picker (like LazyVim) rather than
+    -- native `vim.lsp.buf.*`, which dumps results into the quickfix list. The
+    -- picker is a floating window you dismiss with `q`/`<esc>`, and single
+    -- results jump straight through without a prompt.
+    map("grr", function()
+      Snacks.picker.lsp_references()
+    end, "[G]oto [R]eferences")
+    map("gri", function()
+      Snacks.picker.lsp_implementations()
+    end, "[G]oto [I]mplementation")
+    map("grd", function()
+      Snacks.picker.lsp_definitions()
+    end, "[G]oto [D]efinition")
+    map("grt", function()
+      Snacks.picker.lsp_type_definitions()
+    end, "[G]oto [T]ype Definition")
 
     local client = vim.lsp.get_client_by_id(event.data.client_id)
     if client and client:supports_method("textDocument/inlayHint", event.buf) then
@@ -171,9 +193,21 @@ M.servers = {
 ---@type string[]
 M.mason_tools = {}
 
+-- Servers that mason must *not* manage, keyed by the name used in `M.servers`.
+-- Some language servers have to come from the language's own toolchain rather
+-- than from a generic binary: ocamllsp reads `.cmt` files produced by the
+-- compiler in the active opam switch, so a mismatched build fails at runtime.
+-- Registering one here keeps it out of mason-tool-installer's `ensure_installed`
+-- while still configuring and enabling it below.
+---@type table<string, true>
+M.mason_ignore = {}
+
 function M.finalize()
+  local managed = vim.tbl_filter(function(name)
+    return not M.mason_ignore[name]
+  end, vim.tbl_keys(M.servers))
   require("mason-tool-installer").setup({
-    ensure_installed = vim.list_extend(vim.tbl_keys(M.servers), M.mason_tools),
+    ensure_installed = vim.list_extend(managed, M.mason_tools),
   })
   for name, server in pairs(M.servers) do
     vim.lsp.config(name, server)

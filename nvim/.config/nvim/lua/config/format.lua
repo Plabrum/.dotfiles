@@ -18,6 +18,13 @@ M.formatters_by_ft = {
   lua = { "stylua" },
 }
 
+-- Overrides for individual formatters, merged over conform's built-in recipes
+-- (`:h conform-formatters`). Only needed when the default recipe doesn't fit --
+-- e.g. a binary that has to be invoked through a toolchain wrapper rather than
+-- found on `$PATH`. `lang.*` modules add their own entries.
+---@type table<string, conform.FormatterConfigOverride>
+M.formatters = {}
+
 function M.finalize()
   require("conform").setup({
     notify_on_error = false,
@@ -27,6 +34,7 @@ function M.finalize()
     },
     format_on_save = {},
     formatters_by_ft = M.formatters_by_ft,
+    formatters = M.formatters,
   })
 end
 

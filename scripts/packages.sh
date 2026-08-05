@@ -43,6 +43,7 @@ export brew_fonts_macos=(
 # `mas` is required to drive `mas_apps_full`, so it lives with the GUI tier.
 export brew_packages_macos_full=(
   mas
+  mole
 )
 
 # GUI applications (macOS only - Homebrew Casks). Full profile only.

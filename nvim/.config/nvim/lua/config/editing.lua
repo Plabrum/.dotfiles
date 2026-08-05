@@ -91,6 +91,25 @@ vim.keymap.set({ "n", "x" }, "<leader>p", "<cmd>YankyRingHistory<CR>", { desc = 
 vim.pack.add({ util.gh("RRethy/vim-illuminate") })
 require("illuminate").configure({})
 
+---@param buffer integer? buffer to map in, or nil for global
+local function map_references(buffer)
+  for key, dir in pairs({ ["]]"] = "next", ["[["] = "prev" }) do
+    vim.keymap.set("n", key, function()
+      require("illuminate")["goto_" .. dir .. "_reference"](false)
+    end, { desc = dir == "next" and "Next Reference" or "Prev Reference", buffer = buffer })
+  end
+end
+
+map_references()
+
+-- Several ftplugins (lua, python, ...) set their own buffer-local `]]`/`[[`,
+-- which would shadow the global mappings above -- so re-map per buffer.
+vim.api.nvim_create_autocmd("FileType", {
+  callback = function(ev)
+    map_references(ev.buf)
+  end,
+})
+
 -- ============================================================
 -- DIAL (smarter increment/decrement: dates, booleans, semver, etc.)
 -- ============================================================

@@ -36,6 +36,21 @@ retrain("<leader>fm", "<leader>e", require("config.nav").open_files, "[LazyVim c
 
 retrain("<leader>ca", "gra", vim.lsp.buf.code_action, "[LazyVim compat] Code action")
 
+-- Native `gd` is a buffer-local keyword search for the declaration -- no LSP,
+-- and no jump across files. LazyVim rebinds it to `vim.lsp.buf.definition`;
+-- `config.lsp` puts that on `grd` instead, alongside the other native `gr*`
+-- mappings.
+retrain("gd", "grd", function()
+  Snacks.picker.lsp_definitions()
+end, "[LazyVim compat] Goto Definition")
+
+-- Native `gr` is the virtual-replace operator (`gr{char}`). LazyVim rebinds it
+-- to references; `config.lsp` puts that on `grr` instead, alongside the other
+-- native `gr*` mappings. Both go through snacks.picker, matching `config.lsp`.
+retrain("gr", "grr", function()
+  Snacks.picker.lsp_references()
+end, "[LazyVim compat] Goto References")
+
 -- Puts `:IncRename <cword>` on the command line without executing it, so the
 -- live preview updates as you type the new name -- same as the `grn` mapping in
 -- `config.lsp`, and the same trick LazyVim's inc-rename extra uses.
