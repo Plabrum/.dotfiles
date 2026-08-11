@@ -4,7 +4,9 @@
 --
 vim.g.ai_cmp = false
 vim.g.lazyvim_python_lsp = "basedpyright"
-vim.g.python3_host_prog = "~/.pyenv/versions/neovim/bin/python3"
+-- No Python remote-plugin host (pyenv removed; consolidated on uv). The
+-- basedpyright LSP above is unaffected — it runs via mason/uv, not this host.
+vim.g.loaded_python3_provider = 0
 vim.g.lazyvim_prettier_needs_config = true
 vim.opt.wrap = true
 vim.g.snacks_animate = false

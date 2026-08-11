@@ -18,7 +18,6 @@ export brew_packages_minimal=(
   python3
   node
   go
-  pyenv
   uv
   lazygit
   lazydocker

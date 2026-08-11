@@ -17,7 +17,8 @@
 -- ├── editing.lua         Textobjects, surround, comments, pairs, yank, dial.
 -- ├── nav.lua             Picker, explorer, harpoon, flash.
 -- ├── git.lua             mini.diff, mini.git, lazygit.
--- ├── orgmode.lua         nvim-orgmode (loaded lazily on the `org` filetype).
+-- ├── tt.lua              tt task tracker, floating TUI (snacks terminal).
+-- ├── org-markdown.lua    org-markdown: capture/agenda/find/refile over `.md`.
 -- ├── lsp.lua             Servers, diagnostics, LSP mappings. Base servers only --
 -- │                       exports `M.servers`/`M.mason_tools` for `lang.*` to add to,
 -- │                       and `M.finalize()` to install/enable them all.
@@ -91,10 +92,10 @@ load("now", "config.ui") -- must precede nav: sets up mini.icons for the picker
 load("now", "config.editing")
 load("now", "config.nav")
 load("now", "config.git")
+load("now", "config.tt")
 load("now", "config.retrain")
 
--- Filetype-scoped: nothing here matters until an `.org` file is opened.
-load("filetype:org", "config.orgmode")
+load("now", "config.org-markdown")
 
 load(if_args, "config.lsp")
 load(if_args, "config.completion")
