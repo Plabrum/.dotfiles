@@ -70,6 +70,10 @@
       "src": "https://github.com/nvim-treesitter/nvim-treesitter",
       "version": "'main'"
     },
+    "org-markdown": {
+      "rev": "60b8fdc342fc04b49949409792507bd11353472e",
+      "src": "https://github.com/Plabrum/org-markdown"
+    },
     "persistence.nvim": {
       "rev": "b20b2a7887bd39c1a356980b45e03250f3dce49c",
       "src": "https://github.com/folke/persistence.nvim"

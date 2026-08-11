@@ -137,6 +137,9 @@ clue.setup({
     { mode = "n", keys = "<Leader>x", desc = "Diagnostics/Quickfix" },
     { mode = "n", keys = "<Leader>y", desc = "Yank" },
     { mode = "n", keys = "<Leader>b", desc = "Buffer" },
+    { mode = "n", keys = "<Leader>o", desc = "[O]rg (markdown)" },
+    { mode = "n", keys = "<Leader>of", desc = "Find" },
+    { mode = "n", keys = "<Leader>or", desc = "Refile" },
     -- `<Leader>w` forwards to `<C-w>`, so the window commands themselves are
     -- documented by `gen_clues.windows()` below.
     { mode = "n", keys = "<Leader>w", desc = "[W]indow" },
