@@ -491,25 +491,26 @@ def tt_project_for_cwd() -> str | None:
     return best[1] if best else None
 
 
-def tt_issue(number: int) -> dict | None:
-    """Fetch one issue's full record (ls omits the body)."""
-    payload = _tt_json("issue", "show", str(number))
+def tt_issue(ref: str) -> dict | None:
+    """Fetch one issue's full record by ref (ls omits the body)."""
+    payload = _tt_json("issue", "show", ref)
     if not isinstance(payload, dict):
         return None
     issue = payload.get("issue")
     return issue if isinstance(issue, dict) else None
 
 
-def pick_tt_ticket(project: str | None, attempts: dict[int, int]) -> dict | None:
+def pick_tt_ticket(project: str | None, attempts: dict[str, int]) -> dict | None:
     """Pick the next tt issue to work on.
 
-    Eligible = status `todo`. `high` priority floats to the top, then lowest id
-    first. tt has no labels and no dependency edges, so --skip-label,
-    --prioritize-label and --skip-deps have no effect here; the title-based epic
-    guard still applies.
+    Eligible = status `todo` that is not `waiting` on an open dependency. `high`
+    priority floats to the top, then lowest id first. Dependency-blocked issues
+    are always skipped (tt tracks the edge, so --skip-deps is implicit); tt has
+    no labels, so --skip-label/--prioritize-label have no effect. The title-based
+    epic guard still applies.
 
-    Returns {'kind': 'tt', 'number': int, 'title': str, 'body': str,
-    'priority': str, 'project': str, 'labels': []} or None when nothing matches.
+    Returns {'kind': 'tt', 'number': str (ref, e.g. 'MAS-1'), 'title': str,
+    'body': str, 'priority': str, 'project': str, 'labels': []} or None.
     """
     args = ["issue", "ls", "--json"]
     if project:
@@ -521,8 +522,9 @@ def pick_tt_ticket(project: str | None, attempts: dict[int, int]) -> dict | None
     eligible = [
         r for r in rows
         if r.get("status") == "todo"
+        and not r.get("waiting")
         and not EPIC_TITLE_RE.search(r.get("title") or "")
-        and attempts.get(r["id"], 0) < TT_MAX_ATTEMPTS
+        and attempts.get(r["ref"], 0) < TT_MAX_ATTEMPTS
     ]
     if not eligible:
         return None
@@ -530,12 +532,12 @@ def pick_tt_ticket(project: str | None, attempts: dict[int, int]) -> dict | None
     eligible.sort(key=lambda r: (0 if r.get("priority") == "high" else 1, r["id"]))
     chosen = eligible[0]
 
-    full = tt_issue(chosen["id"])
+    full = tt_issue(chosen["ref"])
     if full is None:
         return None
     return {
         "kind": "tt",
-        "number": full["id"],
+        "number": full["ref"],
         "title": full.get("title") or "",
         "body": full.get("body") or "",
         "priority": full.get("priority") or "normal",
@@ -545,44 +547,26 @@ def pick_tt_ticket(project: str | None, attempts: dict[int, int]) -> dict | None
 
 
 def tt_set_status(ticket: dict, status: str) -> bool:
-    """Move a tt issue to `status`.
-
-    tt's `edit` is a whole-object write, not a patch — every editable field has
-    to be sent back or it is cleared. Re-read the issue first so a change made
-    between pick and now (in the TUI, or by the session itself) is not clobbered.
-    """
-    current = tt_issue(ticket["number"]) or ticket
-    payload = json.dumps({
-        "title": current.get("title") or "",
-        "body": current.get("body") or "",
-        "status": status,
-        "priority": current.get("priority") or "normal",
-    })
-    result = _tt("issue", "action", str(ticket["number"]), "edit", payload)
+    """Move a tt issue to `status` via the targeted setStatus mutation."""
+    result = _tt("issue", "setStatus", str(ticket["number"]), "--status", status)
     if result is None:
         return False
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         # 123 is a refusal — the object's answer. Report it, never retry blind.
-        print(f"[agent-loop] tt refused status={status} on #{ticket['number']}: {detail}", file=sys.stderr)
+        print(f"[agent-loop] tt refused status={status} on {ticket['number']}: {detail}", file=sys.stderr)
         return False
     return True
 
 
-def tt_issue_status(number: int) -> str | None:
-    issue = tt_issue(number)
+def tt_issue_status(ref: str) -> str | None:
+    issue = tt_issue(ref)
     return issue.get("status") if issue else None
 
 
 def _tt_close_command(ticket: dict) -> str:
     """The exact shell line that marks a tt issue done, safely quoted."""
-    payload = json.dumps({
-        "title": ticket["title"],
-        "body": ticket["body"],
-        "status": "done",
-        "priority": ticket["priority"],
-    })
-    return f"tt issue action {ticket['number']} edit {shlex.quote(payload)}"
+    return f"tt issue setStatus {shlex.quote(str(ticket['number']))} --status done"
 
 
 def git_head_short() -> str:
@@ -630,15 +614,15 @@ def _branch_name(ticket: dict, pattern: str) -> str:
 
 
 def _ticket_ref(ticket: dict) -> str:
-    """How the ticket is referenced in commit trailers / PR bodies (#N, tt#N or ENG-123).
+    """How the ticket is referenced in commit trailers / PR bodies (#N, MAS-1 or ENG-123).
 
-    tt refs are prefixed so they can't be mistaken for — or silently auto-link
-    to — a GitHub issue of the same number when the branch is pushed.
+    tt refs already carry a project prefix (e.g. MAS-1), so they can't be
+    mistaken for — or silently auto-link to — a GitHub issue of the same number.
     """
     if ticket["kind"] == "github":
         return f"#{ticket['number']}"
     if ticket["kind"] == "tt":
-        return f"tt#{ticket['number']}"
+        return str(ticket["number"])
     return ticket["identifier"]
 
 
@@ -658,7 +642,7 @@ def render_ticket_block(
         source = f"GitHub `{ticket['repo']}` issue #{ticket['number']}"
         meta = f"**Labels:** {labels}\n"
     elif ticket["kind"] == "tt":
-        source = f"tt project `{ticket['project']}`, issue #{ticket['number']}"
+        source = f"tt project `{ticket['project']}`, issue {ticket['number']}"
         # tt has no labels; priority is the only other axis worth showing.
         meta = f"**Priority:** {ticket['priority']}\n"
     else:
@@ -678,15 +662,10 @@ def render_ticket_block(
         if ticket["kind"] == "tt":
             close = (
                 "### To close\n\n"
-                "After committing and pushing on the current branch, mark the issue done.\n"
-                "`tt`'s edit is a whole-object write, not a patch — every field must be sent "
-                "back or it is cleared. This command already carries the issue's current "
-                "title, body and priority, so run it as-is:\n\n"
+                "After committing on the current branch, mark the issue done:\n\n"
                 "```\n"
                 f"{_tt_close_command(ticket)}\n"
-                "```\n\n"
-                "If you changed the title or body during the session, run `tt issue show "
-                f"{ticket['number']}` first and send the updated fields instead.\n"
+                "```\n"
             )
             return header + close
         if ticket["kind"] == "github":
@@ -1001,7 +980,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     # tt has no shelved state, so failed picks are remembered for this run only.
-    tt_attempts: dict[int, int] = {}
+    tt_attempts: dict[str, int] = {}
 
     def _pick() -> dict | None:
         if backlog_source is None:
@@ -1086,11 +1065,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             bits.append(f"milestone={args.milestone!r}")
         print(f"    Backlog: GitHub {backlog_source[1]} " + (" ".join(bits) or "(no filter)"))
     if backlog_source is not None and backlog_source[0] == "tt":
-        # Be explicit that the label/dep flags are inert here rather than let the
-        # summary imply filters that tt cannot express.
-        print(f"    Pick:    high-priority first, then lowest id (max {TT_MAX_ATTEMPTS} attempts/issue)")
-        if args.skip_label or args.prioritize_label or args.skip_deps:
-            print("             note: --skip-label/--prioritize-label/--skip-deps are ignored (tt has no labels or deps)")
+        # tt tracks dependency edges, so waiting issues are always skipped;
+        # labels don't exist, so those flags are inert.
+        print(f"    Pick:    high-priority first, then lowest id; waiting deps skipped (max {TT_MAX_ATTEMPTS} attempts/issue)")
+        if args.skip_label or args.prioritize_label:
+            print("             note: --skip-label/--prioritize-label are ignored (tt has no labels)")
     elif backlog_source is not None:
         print(f"    Pick:    skip={','.join(skip_labels) or '(none)'} priority={','.join(priority_labels) or '(none)'} skip_deps={args.skip_deps}")
         print(f"    Close:   mode={args.close_mode}" + (f" pr_base={pr_base}" if args.close_mode == "pr" else ""))

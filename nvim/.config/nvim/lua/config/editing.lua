@@ -24,6 +24,12 @@ require("mini.surround").setup({
 
 require("mini.comment").setup({}) -- gcc / gc / gb, same as LazyVim's mini-comment extra
 
+-- Visual-mode `gcc` alias for `gc`. Both LazyVim and mini.comment only comment a
+-- selection with `gc` (the selection already stands in for the line `gcc` picks
+-- in normal mode), but muscle memory reaches for `gcc` -- so forward it to `gc`.
+-- Cost: bare visual `gc` now waits `timeoutlen` to see if a third `c` follows.
+vim.keymap.set("x", "gcc", "gc", { remap = true, desc = "Comment selection (gcc alias)" })
+
 -- Autopairs. `modes.command` also pairs in the `:` command line. The insert-mode
 -- <CR>/<BS> pair handling is driven from `config.completion` (mini.keymap's
 -- map_multistep) so it coexists with completion: <CR> accepts a completion when

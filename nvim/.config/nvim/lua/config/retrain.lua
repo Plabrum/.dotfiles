@@ -36,6 +36,14 @@ retrain("<leader>fm", "<leader>e", require("config.nav").open_files, "[LazyVim c
 
 retrain("<leader>ca", "gra", vim.lsp.buf.code_action, "[LazyVim compat] Code action")
 
+-- LazyVim's `<leader>ghp` was gitsigns' "Preview Hunk Inline". This config uses
+-- mini.diff, whose inline preview is the whole-buffer overlay on `<leader>go`
+-- (see `config.git`) -- close enough that the overlay is the thing to retrain to,
+-- the only difference being all hunks at once vs. just the one under the cursor.
+retrain("<leader>ghp", "<leader>go", function()
+  MiniDiff.toggle_overlay()
+end, "[LazyVim compat] Preview Hunk (inline overlay)")
+
 -- Native `gd` is a buffer-local keyword search for the declaration -- no LSP,
 -- and no jump across files. LazyVim rebinds it to `vim.lsp.buf.definition`;
 -- `config.lsp` puts that on `grd` instead, alongside the other native `gr*`

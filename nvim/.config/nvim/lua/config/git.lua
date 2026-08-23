@@ -1,6 +1,8 @@
 -- All git in one place: the sign column + hunk operators (mini.diff), the `:Git`
--- command and blame-at-cursor (mini.git), and a full-screen lazygit (snacks).
--- mini.diff and mini.git are both part of the already-loaded mini.nvim.
+-- command and blame-at-cursor (mini.git), a full-screen lazygit (snacks), and
+-- the two snacks GitHub features -- gitbrowse (open on GitHub) and gh (issues/PRs
+-- via the `gh` CLI). mini.diff and mini.git are both part of the already-loaded
+-- mini.nvim; the snacks bits ride on the picker set up in `config.nav`.
 
 -- ============================================================
 -- MINI.DIFF (sign column + hunk operators)
@@ -44,6 +46,55 @@ vim.keymap.set("n", "<leader>gs", function()
 end, { desc = "[G]it [S]tatus" })
 vim.keymap.set("n", "<leader>gd", "<cmd>Git diff<CR>", { desc = "[G]it [D]iff" })
 vim.keymap.set("n", "<leader>gL", "<cmd>Git log --oneline<CR>", { desc = "[G]it [L]og" })
+
+-- ============================================================
+-- GITBROWSE (open on GitHub)
+-- ============================================================
+-- `Snacks.gitbrowse` turns the current file/line into its remote URL and opens
+-- it in the browser (GitHub, GitLab, Bitbucket, Azure -- all handled by snacks'
+-- remote/url patterns). Like lazygit and the tt terminal, it's a standalone
+-- snacks function: it needs no `enabled` flag in the `setup()` over in
+-- `config.nav`, just the `require("snacks")` that already ran there.
+--
+-- Keys match LazyVim: `<leader>gB` opens, `<leader>gY` copies the URL to the
+-- system clipboard instead. Both work from a visual selection too, in which case
+-- snacks picks up the highlighted line range for the `#L..-L..` anchor.
+vim.keymap.set({ "n", "x" }, "<leader>gB", function()
+  Snacks.gitbrowse()
+end, { desc = "[G]it [B]rowse (open on GitHub)" })
+vim.keymap.set({ "n", "x" }, "<leader>gY", function()
+  Snacks.gitbrowse({
+    open = function(url)
+      vim.fn.setreg("+", url)
+    end,
+    notify = false,
+  })
+end, { desc = "[G]it browse: [Y]ank URL" })
+
+-- ============================================================
+-- GH (GitHub issues & PRs via the `gh` CLI)
+-- ============================================================
+-- `Snacks.gh` browses GitHub issues and pull requests through the snacks picker,
+-- backed by the `gh` CLI (must be installed and `gh auth`'d -- it is). Like
+-- gitbrowse it needs no `enabled` flag: the picker sources (`gh_issue`/`gh_pr`)
+-- register alongside the picker set up in `config.nav`, and snacks wires the
+-- `gh://` buffers (the rendered issue/PR view) on its own.
+--
+-- `<cr>` on a result opens the action menu (comment, close/reopen, review, merge,
+-- checkout, open in browser, yank URL, ...). Capitalised key = include closed
+-- items. Mnemonics follow the module's own docs and this file's `[G]it [X]` set.
+vim.keymap.set("n", "<leader>gi", function()
+  Snacks.picker.gh_issue()
+end, { desc = "[G]it [I]ssues (open)" })
+vim.keymap.set("n", "<leader>gI", function()
+  Snacks.picker.gh_issue({ state = "all" })
+end, { desc = "[G]it [I]ssues (all)" })
+vim.keymap.set("n", "<leader>gp", function()
+  Snacks.picker.gh_pr()
+end, { desc = "[G]it [P]Rs (open)" })
+vim.keymap.set("n", "<leader>gP", function()
+  Snacks.picker.gh_pr({ state = "all" })
+end, { desc = "[G]it [P]Rs (all)" })
 
 -- ============================================================
 -- LAZYGIT (full-screen float)
