@@ -2,9 +2,15 @@ gui:
   nerdFontsVersion: "3"
 git:
   branchPrefix: pal/
-  autoFetch: false
 os:
-  edit: nvim --server $NVIM --remote-tab {{filename}}
+  # editPreset sets lazygit's "don't run this in a terminal" flag, which is what
+  # kills the "press ENTER to return to lazygit" prompt. The explicit edit/
+  # editAtLine below then override the preset's commands: they close the snacks
+  # lazygit float (--remote-send "q") and open the file with --remote (a buffer
+  # in the window you were in) instead of the preset's --remote-tab (a new tab).
+  editPreset: nvim-remote
+  edit: 'nvim --server "$NVIM" --remote-send "q" && nvim --server "$NVIM" --remote {{filename}}'
+  editAtLine: 'nvim --server "$NVIM" --remote-send "q" && nvim --server "$NVIM" --remote {{filename}} && nvim --server "$NVIM" --remote-send ":{{line}}<CR>"'
 
 customCommands:
   - key: "e"

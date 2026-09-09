@@ -41,8 +41,12 @@ vim.keymap.set("n", "<leader>sd", function()
   Snacks.picker.diagnostics()
 end, { desc = "[S]earch [D]iagnostics" })
 vim.keymap.set("n", "<leader><leader>", function()
-  Snacks.picker.smart({ cwd = git_root() })
-end, { desc = "Find files (smart, git root)" })
+  -- Plain single-source file finder, git-root scoped -- matches LazyVim's
+  -- `<leader><space>` "Find Files (Root Dir)". Deliberately not `smart`: that
+  -- picker blends in global buffers/recent that `cwd` alone doesn't scope, so
+  -- hits from other repos leaked in.
+  Snacks.picker.files({ cwd = git_root() })
+end, { desc = "Find Files (git root)" })
 vim.keymap.set("n", "<leader>,", function()
   Snacks.picker.buffers()
 end, { desc = "Switch buffer" })
@@ -192,5 +196,55 @@ end, { desc = "Treesitter Search" })
 vim.keymap.set("c", "<c-s>", function()
   flash.toggle()
 end, { desc = "Toggle Flash Search" })
+
+-- ============================================================
+-- TREESITTER MOTIONS (nvim-treesitter-textobjects)
+-- ============================================================
+-- The `]f`/`[F`/`]c`/`]a` jump motions LazyVim ships from its treesitter spec.
+-- Complements `mini.ai` (config.editing), which only *selects* textobjects --
+-- this adds the jumps between them. On the plugin's `main` branch to match
+-- nvim-treesitter `main` (see config.treesitter); its API is
+-- `require(...move).goto_next_start(query, "textobjects")`, not the old
+-- `nvim-treesitter.configs` module setup most guides still show.
+
+vim.pack.add({ { src = util.gh("nvim-treesitter/nvim-treesitter-textobjects"), version = "main" } })
+require("nvim-treesitter-textobjects").setup({ move = { set_jumps = true } })
+
+local ts_move = require("nvim-treesitter-textobjects.move")
+-- key -> textobject query. The lowercase key targets the node *start*, the
+-- uppercase its *end*; `]`/`[` pick forward/back -- so `]f`/`[f`/`]F`/`[F` are
+-- next/prev function start/end, and likewise `c` = class, `a` = parameter.
+local motions = {
+  f = "@function.outer",
+  c = "@class.outer",
+  a = "@parameter.inner",
+}
+for key, query in pairs(motions) do
+  local upper = key:upper()
+  vim.keymap.set({ "n", "x", "o" }, "]" .. key, function()
+    ts_move.goto_next_start(query, "textobjects")
+  end, { desc = "Next " .. query .. " start" })
+  vim.keymap.set({ "n", "x", "o" }, "]" .. upper, function()
+    ts_move.goto_next_end(query, "textobjects")
+  end, { desc = "Next " .. query .. " end" })
+  vim.keymap.set({ "n", "x", "o" }, "[" .. key, function()
+    ts_move.goto_previous_start(query, "textobjects")
+  end, { desc = "Prev " .. query .. " start" })
+  vim.keymap.set({ "n", "x", "o" }, "[" .. upper, function()
+    ts_move.goto_previous_end(query, "textobjects")
+  end, { desc = "Prev " .. query .. " end" })
+end
+
+-- The move functions above register themselves as the "last move", so `;`/`,`
+-- repeat the most recent one forward/back. Routing builtin `f`/`F`/`t`/`T`
+-- through the plugin's exprs keeps those single-char searches repeatable with
+-- the same `;`/`,` -- the full LazyVim behaviour. No prior mapping owns these.
+local ts_repeat = require("nvim-treesitter-textobjects.repeatable_move")
+vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat.repeat_last_move_next, { desc = "Repeat last move (forward)" })
+vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat.repeat_last_move_previous, { desc = "Repeat last move (backward)" })
+vim.keymap.set({ "n", "x", "o" }, "f", ts_repeat.builtin_f_expr, { expr = true, desc = "Find char forward" })
+vim.keymap.set({ "n", "x", "o" }, "F", ts_repeat.builtin_F_expr, { expr = true, desc = "Find char backward" })
+vim.keymap.set({ "n", "x", "o" }, "t", ts_repeat.builtin_t_expr, { expr = true, desc = "Till char forward" })
+vim.keymap.set({ "n", "x", "o" }, "T", ts_repeat.builtin_T_expr, { expr = true, desc = "Till char backward" })
 
 return { open_files = open_files }
