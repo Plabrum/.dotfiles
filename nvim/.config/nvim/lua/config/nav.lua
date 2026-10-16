@@ -84,6 +84,24 @@ vim.keymap.set("n", "<leader>sm", function()
 end, { desc = "[S]earch [M]arks" })
 
 -- ============================================================
+-- GRUG-FAR (project-wide search and replace)
+-- ============================================================
+-- A dedicated buffer where you edit Search/Replace/Files fields and apply the
+-- rewrite across the project -- the LazyVim `<leader>sr` this config never
+-- copied over (`<leader>sR` above is snacks' picker-resume, a different key).
+-- Opened from visual mode, grug-far pre-fills the search with the selection.
+
+vim.pack.add({ util.gh("MagicDuck/grug-far.nvim") })
+require("grug-far").setup({})
+
+vim.keymap.set({ "n", "x" }, "<leader>sr", function()
+  local ext = vim.bo.buftype == "" and vim.fn.expand("%:e")
+  require("grug-far").open({
+    prefills = { filesFilter = (ext and ext ~= "") and ("*." .. ext) or nil },
+  })
+end, { desc = "[S]earch and [R]eplace (grug-far)" })
+
+-- ============================================================
 -- EXPLORER (mini.files)
 -- ============================================================
 

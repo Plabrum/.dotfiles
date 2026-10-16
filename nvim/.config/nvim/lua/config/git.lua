@@ -21,6 +21,19 @@ vim.keymap.set("n", "<leader>go", function()
   MiniDiff.toggle_overlay()
 end, { desc = "[G]it [O]verlay (inline diff)" })
 
+-- `<leader>ghr` resets the hunk under the cursor, matching LazyVim's gitsigns
+-- "Reset Hunk". Same thing as `gHgh`, kept because the LazyVim key is in the
+-- fingers. In visual mode it resets every hunk touching the selection.
+vim.keymap.set("n", "<leader>ghr", function()
+  local line = vim.fn.line(".")
+  MiniDiff.do_hunks(0, "reset", { line_start = line, line_end = line })
+end, { desc = "[G]it [H]unk [R]eset" })
+vim.keymap.set("x", "<leader>ghr", function()
+  local from, to = vim.fn.line("v"), vim.fn.line(".")
+  vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
+  MiniDiff.do_hunks(0, "reset", { line_start = math.min(from, to), line_end = math.max(from, to) })
+end, { desc = "[G]it [H]unk [R]eset (selection)" })
+
 -- ============================================================
 -- MINI.GIT (`:Git` command, info at cursor)
 -- ============================================================

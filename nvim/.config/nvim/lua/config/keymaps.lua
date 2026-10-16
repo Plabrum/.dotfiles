@@ -133,6 +133,7 @@ clue.setup({
     { mode = "n", keys = "<Leader>s", desc = "[S]earch" },
     { mode = "n", keys = "<Leader>t", desc = "[T]oggle" },
     { mode = "n", keys = "<Leader>g", desc = "[G]it" },
+    { mode = "n", keys = "<Leader>gh", desc = "[H]unks" },
     { mode = "n", keys = "<Leader>q", desc = "Session/Quit" },
     { mode = "n", keys = "<Leader>x", desc = "Diagnostics/Quickfix" },
     { mode = "n", keys = "<Leader>y", desc = "Yank" },

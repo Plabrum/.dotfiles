@@ -52,6 +52,7 @@ export brew_apps_full=(
   slack
   spotify
   1password
+  1password-cli
   daisydisk
   logi-options+
   chatgpt

@@ -77,12 +77,30 @@ zstyle ':omz:update' mode auto      # update automatically without asking
 # Example format: plugins=(git-branches rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 
-# Platform-specific plugin configuration
+# Plugins for tools that aren't installed no-op, so one list serves every machine.
+plugins=(
+    git
+    1password
+    aws
+    brew
+    colored-man-pages
+    copypath
+    direnv
+    docker
+    docker-compose
+    extract
+    fzf
+    gh
+    history-substring-search
+    sudo
+    uv
+    zsh-autosuggestions
+)
 if [ "$(uname -s)" = "Darwin" ]; then
-    plugins=(git macos zsh-syntax-highlighting)
-else
-    plugins=(git zsh-syntax-highlighting)
+    plugins+=(macos)
 fi
+# Must load last: it wraps every ZLE widget defined before it.
+plugins+=(zsh-syntax-highlighting)
 
 source $ZSH/oh-my-zsh.sh
 
